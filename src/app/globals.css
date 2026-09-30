@@ -1,26 +1,109 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --bg-canvas: #F5F4F0;
+    --bg-paper: #FAF9F6;
+    --card-paper: #FFFFFF;
+    --card-subtle: #F5F4EF;
+    --text-primary: #1C1917;
+    --text-secondary: #6B6560;
+    --text-muted: #9E9891;
+    --border-subtle: #E8E6E0;
+    --border-medium: #DCD9D1;
+    --focus-dot: #2563EB;
+    --focus-glow: rgba(37, 99, 235, 0.25);
+    --inactive-dot: #D6D3CD;
+  }
+
+  body {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* E-Ink / High-Contrast Paper Mode */
+body.theme-eink {
+  --bg-canvas: #EFEFEA;
+  --bg-paper: #F6F6F2;
+  --card-paper: #FFFFFF;
+  --card-subtle: #EDEDE8;
+  --text-primary: #0F0F0E;
+  --text-secondary: #484845;
+  --text-muted: #7E7E7A;
+  --border-subtle: #D2D2CC;
+  --border-medium: #B8B8B0;
+  --focus-dot: #0F0F0E;
+  --focus-glow: rgba(15, 15, 14, 0.15);
+  --inactive-dot: #CCCCCC;
+}
+
+/* Midnight Calm / Dark Mode */
+body.theme-midnight {
+  --bg-canvas: #121211;
+  --bg-paper: #181816;
+  --card-paper: #1F1F1D;
+  --card-subtle: #262623;
+  --text-primary: #F2F1ED;
+  --text-secondary: #A8A69F;
+  --text-muted: #6E6D67;
+  --border-subtle: #2C2C28;
+  --border-medium: #3A3A34;
+  --focus-dot: #60A5FA;
+  --focus-glow: rgba(96, 165, 250, 0.3);
+  --inactive-dot: #484842;
+}
+
+/* Pulse animation for unread blue indicator */
+@keyframes serene-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--focus-glow);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 4px var(--focus-glow);
+  }
+}
+
+.indicator-blue {
+  background-color: var(--focus-dot);
+  animation: serene-pulse 2.8s infinite ease-in-out;
+}
+
+.indicator-white {
+  background-color: transparent;
+  border: 1.5px solid var(--inactive-dot);
+}
+
+/* Tactile paper card styling */
+.paper-card {
+  background-color: var(--card-paper);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.01);
+}
+
+.paper-card-subtle {
+  background-color: var(--card-subtle);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Minimalist custom scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-medium);
 }

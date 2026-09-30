@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FOCUS — Distraction-Free Telegram Communication App
+
+> **"Stay connected without getting distracted."**  
+> *"The user decides what enters the app. The app should never decide what the user should see."*
+
+A minimalist mobile/web communication layer over your Telegram account that eliminates algorithmic feeds, search engines, recommendations, trending metrics, and cognitive noise.
+
+---
+
+## Key Features & Anti-Distraction Design
+
+- **Allowed Channels Only**:
+  - Manually approve channels by username (`@examplechannel`).
+  - No channel discovery, no recommended channels, no trending posts.
+  - Reader view shows latest posts chronologically with dates, timestamps, and media.
+  
+- **Allowed Contacts Only**:
+  - Manually approve contacts by username (`@username`).
+  - No global contact search, no "People you may know", no automatic contact syncing.
+  
+- **Distraction-Free Message Status**:
+  - **🔵 New message**: Unread message indicator.
+  - **⚪ No new message**: All caught up.
+  - Actual message remains **completely hidden** until you intentionally enter the conversation.
+
+- **Strict Hidden-Preview Notifications**:
+  - When an approved contact sends a message, notification displays:  
+    `New message from Ahmed`  
+    *(Never reveals message content like "Ahmed: Can you send me the assignment?")*
+  - Channel post notification displays:  
+    `New post in Study Channel`
+
+- **Focus Mode**:
+  - Silences noise, guarantees hidden previews, and visually dims distractions.
+  - Includes a visual checklist of permitted vs. blocked features.
+
+- **Conversation Screen**:
+  - Intentional chat view with timestamps, document cards, voice message audio player, and reply support.
+  - No engagement stickers, no reaction counters, no stories, no ads.
+
+- **Offline Resiliency**:
+  - Minimal offline notice: `Offline — Last synchronized: 10:42 AM`.
+  - No repetitive error popups; automatically syncs when network returns.
+
+- **Calm Digital Notebook Aesthetics**:
+  - Three serene themes: **Warm Washi Paper**, **High-Contrast E-Ink**, and **Midnight Restful**.
+  - Gentle two-tone acoustic sine chime for peaceful notifications.
+
+---
 
 ## Getting Started
 
-First, run the development server:
-
+### 1. Set Workspace
+Recommended workspace path:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+C:\Users\abdi\.gemini\antigravity\scratch\telegram-focus
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Run the Application
+The app is currently running on **`http://localhost:3000`**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+If restarting:
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Telegram MTProto API Setup (Optional)
+To link your live Telegram account via official MTProto:
+1. Obtain free credentials at [my.telegram.org](https://my.telegram.org) under **API development tools**.
+2. Add your credentials to `.env.local`:
+   ```env
+   TELEGRAM_API_ID=your_api_id
+   TELEGRAM_API_HASH=your_api_hash
+   ```
+3. Click **Connect Telegram** in the app, enter your phone number, and input the code sent by Telegram.
+4. If 2FA is active on your account, the app securely prompts for your cloud password.
 
-## Learn More
+*Note: The app comes pre-configured with a **Distraction-Free Sandbox Mode** so you can test all features, notifications, and contacts immediately without waiting for API keys.*
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Anti-Distraction Guarantees
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Feature | Status |
+| :--- | :--- |
+| **User-approved channels** | Allowed |
+| **User-approved contacts** | Allowed |
+| **Direct conversations** | Allowed |
+| **Hidden-preview notifications** | Allowed |
+| **Global search engine** | **Permanently Blocked** |
+| **Explore / Discovery feed** | **Permanently Blocked** |
+| **Channel recommendations** | **Permanently Blocked** |
+| **"People you may know"** | **Permanently Blocked** |
+| **Stories & reels** | **Permanently Blocked** |
+| **Like & reaction counters** | **Permanently Blocked** |
+| **Advertisements** | **Permanently Blocked** |
