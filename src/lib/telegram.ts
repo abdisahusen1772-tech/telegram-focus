@@ -1,4 +1,4 @@
-import { TelegramClient, sessions } from 'telegram';
+import { TelegramClient, Api, sessions } from 'telegram';
 const { StringSession } = sessions;
 import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages } from './db';
 import { ApprovedContact, ApprovedChannel, Message } from './types';
@@ -136,24 +136,25 @@ export async function signInWithTelegramCode(params: {
   const { phoneNumber, phoneCode, phoneCodeHash, password } = params;
 
   const creds = getActiveApiCredentials();
-  if (creds && activeClient) {
+  if (creds) {
     try {
       const { apiId, apiHash } = creds;
 
+      if (!activeClient || !activeClient.connected) {
+        const stringSession = new StringSession('');
+        activeClient = new TelegramClient(stringSession, apiId, apiHash, {
+          connectionRetries: 3,
+        });
+        await activeClient.connect();
+      }
+
       try {
-        await activeClient.signInUser(
-          {
-            apiId,
-            apiHash,
-          },
-          {
+        await activeClient.invoke(
+          new Api.auth.SignIn({
             phoneNumber,
-            phoneCode: async () => phoneCode,
-            password: password ? async () => password : undefined,
-            onError: (err) => {
-              throw err;
-            },
-          }
+            phoneCodeHash,
+            phoneCode,
+          })
         );
       } catch (signInErr: unknown) {
         const errMsg = signInErr instanceof Error ? signInErr.message : String(signInErr);

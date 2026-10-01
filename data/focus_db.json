@@ -200,5 +200,9 @@
       "contact-fatima": true
     },
     "theme": "nordic"
+  },
+  "apiCredentials": {
+    "apiId": "36393150",
+    "apiHash": "b08cd895004d8d1702eceab9e335dc06"
   }
 }
