@@ -2,15 +2,15 @@
 
 @layer base {
   :root {
-    --bg-canvas: #F5F4F0;
-    --bg-paper: #FAF9F6;
+    --bg-canvas: #EDEAE4;
+    --bg-paper: #FAF8F5;
     --card-paper: #FFFFFF;
-    --card-subtle: #F5F4EF;
+    --card-subtle: #F2EFE9;
     --text-primary: #1C1917;
-    --text-secondary: #6B6560;
-    --text-muted: #9E9891;
-    --border-subtle: #E8E6E0;
-    --border-medium: #DCD9D1;
+    --text-secondary: #6B645D;
+    --text-muted: #9E978E;
+    --border-subtle: #E5E1D8;
+    --border-medium: #D5D0C5;
     --focus-dot: #2563EB;
     --focus-glow: rgba(37, 99, 235, 0.25);
     --inactive-dot: #D6D3CD;
@@ -23,42 +23,107 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
 }
 
-/* E-Ink / High-Contrast Paper Mode */
-body.theme-eink {
-  --bg-canvas: #EFEFEA;
-  --bg-paper: #F6F6F2;
+/* 1. Warm Washi Paper Theme */
+body.theme-paper {
+  --bg-canvas: #EDEAE4;
+  --bg-paper: #FAF8F5;
   --card-paper: #FFFFFF;
-  --card-subtle: #EDEDE8;
-  --text-primary: #0F0F0E;
-  --text-secondary: #484845;
-  --text-muted: #7E7E7A;
-  --border-subtle: #D2D2CC;
-  --border-medium: #B8B8B0;
-  --focus-dot: #0F0F0E;
-  --focus-glow: rgba(15, 15, 14, 0.15);
+  --card-subtle: #F2EFE9;
+  --text-primary: #1C1917;
+  --text-secondary: #6B645D;
+  --text-muted: #9E978E;
+  --border-subtle: #E5E1D8;
+  --border-medium: #D5D0C5;
+  --focus-dot: #2563EB;
+  --focus-glow: rgba(37, 99, 235, 0.25);
+  --inactive-dot: #D6D3CD;
+}
+
+/* 2. E-Ink Monochrome Theme */
+body.theme-eink {
+  --bg-canvas: #E6E6E0;
+  --bg-paper: #F4F4EE;
+  --card-paper: #FFFFFF;
+  --card-subtle: #EAEAE2;
+  --text-primary: #0A0A0A;
+  --text-secondary: #4A4A46;
+  --text-muted: #7A7A74;
+  --border-subtle: #CCCCCC;
+  --border-medium: #AAAAAA;
+  --focus-dot: #0A0A0A;
+  --focus-glow: rgba(10, 10, 10, 0.2);
   --inactive-dot: #CCCCCC;
 }
 
-/* Midnight Calm / Dark Mode */
-body.theme-midnight {
-  --bg-canvas: #121211;
-  --bg-paper: #181816;
-  --card-paper: #1F1F1D;
-  --card-subtle: #262623;
-  --text-primary: #F2F1ED;
-  --text-secondary: #A8A69F;
-  --text-muted: #6E6D67;
-  --border-subtle: #2C2C28;
-  --border-medium: #3A3A34;
-  --focus-dot: #60A5FA;
-  --focus-glow: rgba(96, 165, 250, 0.3);
-  --inactive-dot: #484842;
+/* 3. Pure Obsidian OLED Black Theme */
+body.theme-obsidian {
+  --bg-canvas: #000000;
+  --bg-paper: #080808;
+  --card-paper: #121212;
+  --card-subtle: #1A1A1A;
+  --text-primary: #F5F5F5;
+  --text-secondary: #A3A3A3;
+  --text-muted: #666666;
+  --border-subtle: #242424;
+  --border-medium: #383838;
+  --focus-dot: #3B82F6;
+  --focus-glow: rgba(59, 130, 246, 0.35);
+  --inactive-dot: #404040;
 }
 
-/* Pulse animation for unread blue indicator */
+/* 4. Midnight Slate Theme */
+body.theme-midnight {
+  --bg-canvas: #121418;
+  --bg-paper: #181B20;
+  --card-paper: #20242B;
+  --card-subtle: #282D36;
+  --text-primary: #ECEFF4;
+  --text-secondary: #9BA1B0;
+  --text-muted: #697080;
+  --border-subtle: #2E3440;
+  --border-medium: #3B4252;
+  --focus-dot: #81A1C1;
+  --focus-glow: rgba(129, 161, 193, 0.35);
+  --inactive-dot: #4C566A;
+}
+
+/* 5. Forest Sage / Matcha Zen Theme */
+body.theme-sage {
+  --bg-canvas: #121714;
+  --bg-paper: #18201B;
+  --card-paper: #1F2B24;
+  --card-subtle: #27372E;
+  --text-primary: #E8F0EA;
+  --text-secondary: #92A898;
+  --text-muted: #65796B;
+  --border-subtle: #2C3E33;
+  --border-medium: #394F42;
+  --focus-dot: #34D399;
+  --focus-glow: rgba(52, 211, 153, 0.35);
+  --inactive-dot: #374E40;
+}
+
+/* 6. Nordic Frost / Slate Blue Theme */
+body.theme-nordic {
+  --bg-canvas: #0F172A;
+  --bg-paper: #141F36;
+  --card-paper: #1E293B;
+  --card-subtle: #28364E;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --border-subtle: #334155;
+  --border-medium: #475569;
+  --focus-dot: #38BDF8;
+  --focus-glow: rgba(56, 189, 248, 0.35);
+  --inactive-dot: #3B4F6E;
+}
+
+/* Serene pulse for message status dot */
 @keyframes serene-pulse {
   0%, 100% {
     transform: scale(1);
@@ -71,28 +136,55 @@ body.theme-midnight {
 }
 
 .indicator-blue {
-  background-color: var(--focus-dot);
+  background-color: var(--focus-dot) !important;
   animation: serene-pulse 2.8s infinite ease-in-out;
 }
 
 .indicator-white {
-  background-color: transparent;
-  border: 1.5px solid var(--inactive-dot);
+  background-color: transparent !important;
+  border: 1.5px solid var(--inactive-dot) !important;
 }
 
-/* Tactile paper card styling */
-.paper-card {
+/* App structural theme container helper classes */
+.app-canvas {
+  background-color: var(--bg-canvas);
+}
+
+.app-frame {
+  background-color: var(--bg-paper);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.app-surface {
   background-color: var(--card-paper);
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.01);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
 }
 
-.paper-card-subtle {
+.app-surface-subtle {
   background-color: var(--card-subtle);
-  border: 1px solid var(--border-subtle);
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
 }
 
-/* Minimalist custom scrollbar */
+.app-text-primary {
+  color: var(--text-primary);
+}
+
+.app-text-secondary {
+  color: var(--text-secondary);
+}
+
+.app-text-muted {
+  color: var(--text-muted);
+}
+
+.app-border {
+  border-color: var(--border-subtle);
+}
+
+/* Minimalist scrollbar styled with active theme colors */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;

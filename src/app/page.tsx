@@ -9,6 +9,7 @@ import { AddPeerModal } from '@/components/AddPeerModal';
 import { ConnectTelegramModal } from '@/components/ConnectTelegramModal';
 import { FocusModeBanner } from '@/components/FocusModeBanner';
 import { OfflineBanner } from '@/components/OfflineBanner';
+import { ThemeSelectorModal, AppTheme, THEME_OPTIONS } from '@/components/ThemeSelectorModal';
 import {
   UserSession,
   ApprovedContact,
@@ -19,16 +20,14 @@ import {
   requestNotificationPermission,
   notifyContactMessage,
   notifyChannelPost,
-  playCalmChime,
 } from '@/lib/notifications';
-import { Sun, Moon, BookOpen, Shield, Bell } from 'lucide-react';
+import { Palette } from 'lucide-react';
 
 type TabView = 'home' | 'channels' | 'contacts' | 'settings';
-type ThemeMode = 'paper' | 'eink' | 'midnight';
 
 export default function TelegramFocusApp() {
   const [activeTab, setActiveTab] = useState<TabView>('home');
-  const [theme, setTheme] = useState<ThemeMode>('paper');
+  const [theme, setTheme] = useState<AppTheme>('paper');
   const [session, setSession] = useState<UserSession | null>(null);
   const [isApiConfigured, setIsApiConfigured] = useState<boolean>(false);
   const [contacts, setContacts] = useState<ApprovedContact[]>([]);
@@ -39,6 +38,7 @@ export default function TelegramFocusApp() {
     notificationsEnabled: true,
     soundEnabled: true,
     highContrastEInk: false,
+    theme: 'paper',
     channelNotifications: {},
     contactNotifications: {},
   });
@@ -51,6 +51,7 @@ export default function TelegramFocusApp() {
   const [addModalType, setAddModalType] = useState<'contact' | 'channel' | null>(null);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isFocusModalOpen, setIsFocusModalOpen] = useState(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
 
   // Distraction-free In-App Notification Toast
   const [activeToast, setActiveToast] = useState<{
@@ -77,6 +78,17 @@ export default function TelegramFocusApp() {
         setIsApiConfigured(authData.isApiConfigured);
         if (authData.settings) {
           setSettings(authData.settings);
+          if (authData.settings.theme) {
+            setTheme(authData.settings.theme);
+          }
+        }
+      }
+
+      // Check localStorage for saved theme preference
+      if (typeof window !== 'undefined') {
+        const savedTheme = localStorage.getItem('focus_theme') as AppTheme;
+        if (savedTheme && THEME_OPTIONS.some((t) => t.id === savedTheme)) {
+          setTheme(savedTheme);
         }
       }
 
@@ -132,15 +144,19 @@ export default function TelegramFocusApp() {
 
   // Handle Theme Classes on document body
   useEffect(() => {
-    document.body.classList.remove('theme-paper', 'theme-eink', 'theme-midnight');
-    if (settings.highContrastEInk || theme === 'eink') {
-      document.body.classList.add('theme-eink');
-    } else if (theme === 'midnight') {
-      document.body.classList.add('theme-midnight');
-    } else {
-      document.body.classList.add('theme-paper');
+    document.body.classList.remove(
+      'theme-paper',
+      'theme-eink',
+      'theme-obsidian',
+      'theme-midnight',
+      'theme-sage',
+      'theme-nordic'
+    );
+    document.body.classList.add(`theme-${theme}`);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('focus_theme', theme);
     }
-  }, [theme, settings.highContrastEInk]);
+  }, [theme]);
 
   // Handle Settings updates
   const handleUpdateSettings = async (partial: Partial<AppSettings>) => {
@@ -153,10 +169,18 @@ export default function TelegramFocusApp() {
       const data = await res.json();
       if (data.success) {
         setSettings(data.settings);
+        if (data.settings.theme) {
+          setTheme(data.settings.theme);
+        }
       }
     } catch (e) {
       console.error('Failed to update settings:', e);
     }
+  };
+
+  const handleSelectTheme = (newTheme: AppTheme) => {
+    setTheme(newTheme);
+    handleUpdateSettings({ theme: newTheme });
   };
 
   const handleRemoveContact = async (id: string) => {
@@ -228,7 +252,6 @@ export default function TelegramFocusApp() {
             });
           }
 
-          // Auto-hide toast after 4s
           setTimeout(() => {
             setActiveToast(null);
           }, 4500);
@@ -260,70 +283,35 @@ export default function TelegramFocusApp() {
     setActiveToast(null);
   };
 
+  const currentThemeObj = THEME_OPTIONS.find((t) => t.id === theme) || THEME_OPTIONS[0];
+
   return (
-    <main className="min-h-screen bg-stone-200/60 flex flex-col justify-center items-center p-0 sm:p-6 transition-colors duration-300">
+    <main className="min-h-screen app-canvas flex flex-col justify-center items-center p-0 sm:p-6 transition-colors duration-300">
       {/* Top Desktop Aesthetic Bar */}
-      <div className="hidden sm:flex items-center justify-between w-full max-w-md px-3 py-2 mb-2 text-stone-500 font-mono text-[11px]">
+      <div className="hidden sm:flex items-center justify-between w-full max-w-md px-3 py-2 mb-2 font-mono text-[11px] opacity-75">
         <div className="flex items-center space-x-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500" />
           <span className="tracking-wider">
             {session?.isConnected
               ? session.isDemoMode
                 ? 'DISTRACTION-FREE SANDBOX'
-                : 'TELEGRAM MTPROTO CONNECTED'
+                : 'TELEGRAM MTPROTO ACTIVE'
               : 'OFFLINE MODE'}
           </span>
         </div>
 
-        {/* Theme Mode Switcher */}
-        <div className="flex items-center space-x-1 bg-stone-300/60 p-0.5 rounded-lg border border-stone-300/80">
-          <button
-            onClick={() => {
-              setTheme('paper');
-              handleUpdateSettings({ highContrastEInk: false });
-            }}
-            className={`p-1 rounded cursor-pointer transition ${
-              theme === 'paper' && !settings.highContrastEInk
-                ? 'bg-white text-stone-900 shadow-2xs'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-            title="Warm Paper Theme"
-          >
-            <Sun className="w-3 h-3" />
-          </button>
-          <button
-            onClick={() => {
-              setTheme('eink');
-              handleUpdateSettings({ highContrastEInk: true });
-            }}
-            className={`p-1 rounded cursor-pointer transition ${
-              settings.highContrastEInk || theme === 'eink'
-                ? 'bg-white text-stone-900 shadow-2xs'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-            title="E-Ink Monochrome Theme"
-          >
-            <BookOpen className="w-3 h-3" />
-          </button>
-          <button
-            onClick={() => {
-              setTheme('midnight');
-              handleUpdateSettings({ highContrastEInk: false });
-            }}
-            className={`p-1 rounded cursor-pointer transition ${
-              theme === 'midnight' && !settings.highContrastEInk
-                ? 'bg-white text-stone-900 shadow-2xs'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-            title="Midnight Restful Theme"
-          >
-            <Moon className="w-3 h-3" />
-          </button>
-        </div>
+        {/* Quick Theme Switcher Pill */}
+        <button
+          onClick={() => setIsThemeModalOpen(true)}
+          className="flex items-center space-x-1.5 px-2.5 py-1 rounded-full border border-black/10 dark:border-white/10 bg-white/40 dark:bg-black/40 hover:bg-white/70 dark:hover:bg-black/60 transition cursor-pointer text-xs"
+        >
+          <Palette className="w-3.5 h-3.5" />
+          <span>{currentThemeObj.name}</span>
+        </button>
       </div>
 
       {/* Main Distraction-Free Digital Notebook Frame */}
-      <div className="w-full max-w-md h-screen sm:h-[820px] bg-stone-50 border sm:border-stone-300/90 sm:rounded-2xl shadow-md sm:shadow-xl flex flex-col overflow-hidden relative transition-colors duration-200">
+      <div className="w-full max-w-md h-screen sm:h-[820px] app-frame border sm:rounded-2xl shadow-md sm:shadow-xl flex flex-col overflow-hidden relative transition-colors duration-200">
         {/* Offline Banner (Section 15) */}
         <OfflineBanner
           isOffline={isOffline}
@@ -339,7 +327,7 @@ export default function TelegramFocusApp() {
             className="absolute top-3 left-4 right-4 z-40 bg-stone-900 text-stone-50 px-4 py-3 rounded-xl shadow-lg border border-stone-800 flex items-center justify-between cursor-pointer animate-in fade-in slide-in-from-top-2 duration-200"
           >
             <div className="flex items-center space-x-2.5 overflow-hidden">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0" />
+              <span className="w-2.5 h-2.5 rounded-full indicator-blue shrink-0" />
               <div className="truncate">
                 <p className="text-xs font-semibold tracking-tight truncate">
                   {activeToast.title}
@@ -390,6 +378,8 @@ export default function TelegramFocusApp() {
               contacts={contacts}
               channels={channels}
               isApiConfigured={isApiConfigured}
+              currentTheme={theme}
+              onSelectTheme={handleSelectTheme}
               onUpdateSettings={handleUpdateSettings}
               onRemoveContact={handleRemoveContact}
               onRemoveChannel={handleRemoveChannel}
@@ -407,13 +397,15 @@ export default function TelegramFocusApp() {
               onSimulateIncoming={handleSimulateIncoming}
               focusMode={settings.focusMode}
               onOpenFocusModal={() => setIsFocusModalOpen(true)}
+              onOpenThemeModal={() => setIsThemeModalOpen(true)}
+              themeName={currentThemeObj.name}
             />
           )}
         </div>
 
         {/* Bottom Navigation (Section 8: Channels | Contacts | Settings) */}
         {!activeContact && !activeChannel && (
-          <nav className="h-14 bg-white/90 backdrop-blur-xs border-t border-stone-200/90 flex items-center justify-around px-2 shrink-0 select-none shadow-2xs">
+          <nav className="h-14 bg-white/90 backdrop-blur-xs border-t border-black/10 dark:border-white/10 flex items-center justify-around px-2 shrink-0 select-none shadow-2xs">
             <button
               onClick={() => {
                 setActiveTab('home');
@@ -422,8 +414,8 @@ export default function TelegramFocusApp() {
               }}
               className={`flex-1 py-3 text-center text-xs font-mono uppercase tracking-wider transition-all duration-150 cursor-pointer ${
                 activeTab === 'home' || activeTab === 'channels'
-                  ? 'text-stone-950 font-bold border-b-2 border-stone-900 -mb-px'
-                  : 'text-stone-400 hover:text-stone-700'
+                  ? 'font-bold border-b-2 border-current -mb-px'
+                  : 'opacity-40 hover:opacity-80'
               }`}
             >
               Channels
@@ -437,8 +429,8 @@ export default function TelegramFocusApp() {
               }}
               className={`flex-1 py-3 text-center text-xs font-mono uppercase tracking-wider transition-all duration-150 cursor-pointer ${
                 activeTab === 'contacts'
-                  ? 'text-stone-950 font-bold border-b-2 border-stone-900 -mb-px'
-                  : 'text-stone-400 hover:text-stone-700'
+                  ? 'font-bold border-b-2 border-current -mb-px'
+                  : 'opacity-40 hover:opacity-80'
               }`}
             >
               Contacts
@@ -452,8 +444,8 @@ export default function TelegramFocusApp() {
               }}
               className={`flex-1 py-3 text-center text-xs font-mono uppercase tracking-wider transition-all duration-150 cursor-pointer ${
                 activeTab === 'settings'
-                  ? 'text-stone-950 font-bold border-b-2 border-stone-900 -mb-px'
-                  : 'text-stone-400 hover:text-stone-700'
+                  ? 'font-bold border-b-2 border-current -mb-px'
+                  : 'opacity-40 hover:opacity-80'
               }`}
             >
               Settings
@@ -486,6 +478,14 @@ export default function TelegramFocusApp() {
         onClose={() => setIsFocusModalOpen(false)}
         focusMode={settings.focusMode}
         onToggleFocus={(val) => handleUpdateSettings({ focusMode: val })}
+      />
+
+      {/* Theme Selection Modal */}
+      <ThemeSelectorModal
+        isOpen={isThemeModalOpen}
+        currentTheme={theme}
+        onSelectTheme={handleSelectTheme}
+        onClose={() => setIsThemeModalOpen(false)}
       />
     </main>
   );

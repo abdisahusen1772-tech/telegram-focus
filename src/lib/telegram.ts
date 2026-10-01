@@ -1,28 +1,31 @@
 import { TelegramClient, sessions } from 'telegram';
 const { StringSession } = sessions;
-import { getUserSession, setUserSession } from './db';
+import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages } from './db';
 import { ApprovedContact, ApprovedChannel, Message } from './types';
-
-// Telegram API credentials
-const API_ID = process.env.TELEGRAM_API_ID ? parseInt(process.env.TELEGRAM_API_HASH ? process.env.TELEGRAM_API_ID : '0', 10) : 0;
-const API_HASH = process.env.TELEGRAM_API_HASH || '';
 
 // In-memory active client reference
 let activeClient: TelegramClient | null = null;
 let currentPhoneCodeHash: string | null = null;
 let currentPhoneNumber: string | null = null;
 
+export function getActiveApiCredentials(): { apiId: number; apiHash: string } | null {
+  const creds = getApiCredentials();
+  if (!creds || !creds.apiId || !creds.apiHash) return null;
+  const numId = parseInt(creds.apiId, 10);
+  if (isNaN(numId) || numId <= 0) return null;
+  return { apiId: numId, apiHash: creds.apiHash.trim() };
+}
+
 export function isTelegramApiConfigured(): boolean {
-  return Boolean(process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH && process.env.TELEGRAM_API_ID.trim() !== '');
+  return Boolean(getActiveApiCredentials());
 }
 
 export async function getOrInitTelegramClient(customSessionString?: string): Promise<TelegramClient | null> {
-  const apiId = API_ID || parseInt(process.env.TELEGRAM_API_ID || '0', 10);
-  const apiHash = API_HASH || process.env.TELEGRAM_API_HASH || '';
-
-  if (!apiId || !apiHash) {
+  const creds = getActiveApiCredentials();
+  if (!creds) {
     return null;
   }
+  const { apiId, apiHash } = creds;
 
   const existingSession = getUserSession();
   const sessionString = customSessionString || existingSession?.sessionString || '';
@@ -45,7 +48,7 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
 /**
  * Phase 1: Send Telegram authentication verification code to phone number via MTProto
  */
-export async function sendTelegramVerificationCode(phoneNumber: string): Promise<{
+export async function sendTelegramVerificationCode(phoneNumber: string, apiIdParam?: string, apiHashParam?: string): Promise<{
   success: boolean;
   phoneCodeHash?: string;
   isRegistered?: boolean;
@@ -54,11 +57,16 @@ export async function sendTelegramVerificationCode(phoneNumber: string): Promise
 }> {
   const cleanPhone = phoneNumber.trim();
 
+  if (apiIdParam && apiHashParam) {
+    setApiCredentials(apiIdParam, apiHashParam);
+  }
+
+  const creds = getActiveApiCredentials();
+
   // If real Telegram API credentials are configured, execute authentic MTProto call
-  if (isTelegramApiConfigured()) {
+  if (creds) {
     try {
-      const apiId = parseInt(process.env.TELEGRAM_API_ID!, 10);
-      const apiHash = process.env.TELEGRAM_API_HASH!;
+      const { apiId, apiHash } = creds;
       const stringSession = new StringSession('');
       const client = new TelegramClient(stringSession, apiId, apiHash, {
         connectionRetries: 3,
@@ -127,10 +135,10 @@ export async function signInWithTelegramCode(params: {
 }> {
   const { phoneNumber, phoneCode, phoneCodeHash, password } = params;
 
-  if (isTelegramApiConfigured() && activeClient) {
+  const creds = getActiveApiCredentials();
+  if (creds && activeClient) {
     try {
-      const apiId = parseInt(process.env.TELEGRAM_API_ID!, 10);
-      const apiHash = process.env.TELEGRAM_API_HASH!;
+      const { apiId, apiHash } = creds;
 
       try {
         await activeClient.signInUser(
@@ -388,7 +396,8 @@ export async function sendTelegramMessage(peerUsername: string, text: string): P
   const client = await getOrInitTelegramClient();
   if (client && client.connected) {
     try {
-      const entity = await client.getEntity(peerUsername);
+      const cleanUsername = peerUsername.replace(/^@/, '').trim();
+      const entity = await client.getEntity(cleanUsername);
       await client.sendMessage(entity, { message: text });
       return true;
     } catch (err) {
@@ -397,4 +406,53 @@ export async function sendTelegramMessage(peerUsername: string, text: string): P
     }
   }
   return true; // simulated in demo mode
+}
+
+/**
+ * Fetch live messages from real Telegram account for an approved contact or channel
+ */
+export async function syncMessagesFromTelegram(peerId: string, peerUsername: string): Promise<Message[]> {
+  const client = await getOrInitTelegramClient();
+  if (!client || !client.connected) {
+    return [];
+  }
+
+  try {
+    const cleanUsername = peerUsername.replace(/^@/, '').trim();
+    const entity = await client.getEntity(cleanUsername);
+    const tgMessages = await client.getMessages(entity, { limit: 25 });
+    const me = (await client.getMe()) as unknown as { id: { toString: () => string }; firstName?: string };
+    const myId = me?.id ? me.id.toString() : 'me';
+
+    const synced: Message[] = [];
+    for (const msg of tgMessages) {
+      const textContent = (msg as unknown as { message?: string }).message || '';
+      if (!textContent && !(msg as unknown as { media?: unknown }).media) continue;
+
+      const isOut = Boolean((msg as unknown as { out?: boolean }).out);
+      const unixDate = (msg as unknown as { date: number }).date;
+      const mDate = unixDate ? new Date(unixDate * 1000).toISOString() : new Date().toISOString();
+      const msgId = (msg as unknown as { id: number }).id;
+
+      const newMsg: Message = {
+        id: `tg-${peerId}-${msgId}`,
+        peerId,
+        senderId: isOut ? myId : peerId,
+        senderName: isOut ? 'You' : cleanUsername,
+        isOutgoing: isOut,
+        text: textContent || '📎 [Media Attachment]',
+        date: mDate,
+      };
+      synced.push(newMsg);
+    }
+
+    if (synced.length > 0) {
+      saveRealTelegramMessages(peerId, synced);
+    }
+
+    return synced;
+  } catch (err) {
+    console.warn('Real telegram message fetch notice:', err);
+    return [];
+  }
 }

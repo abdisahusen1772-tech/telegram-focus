@@ -13,6 +13,8 @@ interface HomeScreenProps {
   onSimulateIncoming: (peerId: string) => void;
   focusMode: boolean;
   onOpenFocusModal: () => void;
+  onOpenThemeModal?: () => void;
+  themeName?: string;
 }
 
 export function HomeScreen({
@@ -24,6 +26,8 @@ export function HomeScreen({
   onSimulateIncoming,
   focusMode,
   onOpenFocusModal,
+  onOpenThemeModal,
+  themeName,
 }: HomeScreenProps) {
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 max-w-md mx-auto w-full flex flex-col justify-between select-none">
@@ -48,6 +52,17 @@ export function HomeScreen({
               <span className={`w-1.5 h-1.5 rounded-full ${focusMode ? 'bg-emerald-400' : 'bg-stone-400'}`} />
               <span>{focusMode ? 'FOCUS MODE ACTIVE' : 'STANDARD MODE'}</span>
             </button>
+
+            {onOpenThemeModal && (
+              <button
+                onClick={onOpenThemeModal}
+                className="text-[10px] font-mono px-2.5 py-1 rounded-full border border-stone-300 hover:border-stone-500 bg-white hover:bg-stone-50 transition cursor-pointer text-stone-700 shadow-2xs flex items-center space-x-1"
+                title="Change Interface Theme"
+              >
+                <span>🎨</span>
+                <span>{themeName || 'Theme'}</span>
+              </button>
+            )}
           </div>
         </header>
 

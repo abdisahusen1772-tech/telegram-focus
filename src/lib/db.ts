@@ -457,3 +457,38 @@ export function resetToDemoDatabase(): DatabaseSchema {
   saveDb(initialDb);
   return initialDb;
 }
+
+// Telegram API Credentials Helpers
+export function getApiCredentials(): { apiId: string; apiHash: string } | null {
+  const db = getDb();
+  if (db.apiCredentials && db.apiCredentials.apiId && db.apiCredentials.apiHash) {
+    return db.apiCredentials;
+  }
+  if (process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH) {
+    return {
+      apiId: process.env.TELEGRAM_API_ID.trim(),
+      apiHash: process.env.TELEGRAM_API_HASH.trim(),
+    };
+  }
+  return null;
+}
+
+export function setApiCredentials(apiId: string, apiHash: string): void {
+  const db = getDb();
+  db.apiCredentials = {
+    apiId: apiId.trim(),
+    apiHash: apiHash.trim(),
+  };
+  saveDb(db);
+}
+
+export function saveRealTelegramMessages(peerId: string, realMessages: Message[]): void {
+  const db = getDb();
+  // Filter out existing messages for this peer with matching IDs
+  const existingIds = new Set(db.messages.map(m => m.id));
+  const newOnes = realMessages.filter(m => !existingIds.has(m.id));
+  if (newOnes.length > 0) {
+    db.messages.push(...newOnes);
+    saveDb(db);
+  }
+}

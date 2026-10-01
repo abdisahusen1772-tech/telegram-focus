@@ -65,6 +65,7 @@ export interface AppSettings {
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   highContrastEInk: boolean;
+  theme?: 'paper' | 'eink' | 'obsidian' | 'midnight' | 'sage' | 'nordic';
   channelNotifications: Record<string, boolean>;
   contactNotifications: Record<string, boolean>;
 }

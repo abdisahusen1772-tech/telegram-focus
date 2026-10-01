@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { phoneNumber } = body;
+    const { phoneNumber, apiId, apiHash } = body;
 
     if (!phoneNumber || typeof phoneNumber !== 'string') {
       return NextResponse.json(
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await sendTelegramVerificationCode(phoneNumber);
+    const result = await sendTelegramVerificationCode(phoneNumber, apiId, apiHash);
 
     if (!result.success) {
       return NextResponse.json(

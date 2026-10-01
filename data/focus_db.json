@@ -8,8 +8,8 @@
     "sessionString": "demo_session_active",
     "isConnected": true,
     "isDemoMode": true,
-    "connectedAt": "2026-09-30T16:17:23.528Z",
-    "lastSyncedAt": "2026-09-30T16:17:23.528Z"
+    "connectedAt": "2026-09-30T19:18:55.969Z",
+    "lastSyncedAt": "2026-09-30T19:18:55.969Z"
   },
   "contacts": [
     {
@@ -20,8 +20,8 @@
       "status": "new_message",
       "unreadCount": 1,
       "notificationsEnabled": true,
-      "addedAt": "2026-09-20T16:17:23.379Z",
-      "lastMessageAt": "2026-09-30T16:27:11.111Z"
+      "addedAt": "2026-09-20T17:34:39.354Z",
+      "lastMessageAt": "2026-09-30T17:22:39.354Z"
     },
     {
       "id": "contact-abdullah",
@@ -30,8 +30,8 @@
       "status": "no_new_message",
       "unreadCount": 0,
       "notificationsEnabled": true,
-      "addedAt": "2026-09-22T16:17:23.379Z",
-      "lastMessageAt": "2026-09-29T22:17:23.379Z"
+      "addedAt": "2026-09-22T17:34:39.354Z",
+      "lastMessageAt": "2026-09-29T23:34:39.354Z"
     },
     {
       "id": "contact-fatima",
@@ -40,8 +40,8 @@
       "status": "new_message",
       "unreadCount": 2,
       "notificationsEnabled": true,
-      "addedAt": "2026-09-23T16:17:23.379Z",
-      "lastMessageAt": "2026-09-30T15:43:23.379Z"
+      "addedAt": "2026-09-23T17:34:39.354Z",
+      "lastMessageAt": "2026-09-30T17:00:39.354Z"
     }
   ],
   "channels": [
@@ -51,8 +51,8 @@
       "title": "📚 Study Channel",
       "about": "Curated deep-work resources, computer science notes, and distraction-free study techniques.",
       "notificationsEnabled": true,
-      "addedAt": "2026-09-25T16:17:23.379Z",
-      "lastPostAt": "2026-09-30T16:27:30.510Z",
+      "addedAt": "2026-09-25T17:34:39.354Z",
+      "lastPostAt": "2026-09-30T15:34:39.354Z",
       "hasNewPost": true
     },
     {
@@ -61,8 +61,8 @@
       "title": "🕌 Islamic Channel",
       "about": "Daily reflections, Quranic reminders, and tranquil spiritual wisdom.",
       "notificationsEnabled": false,
-      "addedAt": "2026-09-26T16:17:23.379Z",
-      "lastPostAt": "2026-09-30T10:17:23.379Z",
+      "addedAt": "2026-09-26T17:34:39.354Z",
+      "lastPostAt": "2026-09-30T11:34:39.354Z",
       "hasNewPost": false
     },
     {
@@ -71,8 +71,8 @@
       "title": "📰 News Channel",
       "about": "Minimal factual dispatches. No sensational headlines, no engagement bait.",
       "notificationsEnabled": true,
-      "addedAt": "2026-09-27T16:17:23.379Z",
-      "lastPostAt": "2026-09-30T15:17:23.379Z",
+      "addedAt": "2026-09-27T17:34:39.354Z",
+      "lastPostAt": "2026-09-30T16:34:39.354Z",
       "hasNewPost": true
     }
   ],
@@ -84,7 +84,7 @@
       "senderName": "You",
       "isOutgoing": true,
       "text": "Assalamu alaikum Ahmed, did you review the project outline for tomorrow?",
-      "date": "2026-09-30T15:32:23.379Z"
+      "date": "2026-09-30T16:49:39.354Z"
     },
     {
       "id": "msg-2",
@@ -93,7 +93,7 @@
       "senderName": "Ahmed",
       "isOutgoing": false,
       "text": "Wa alaikum assalam! Yes I looked at it, looks solid.",
-      "date": "2026-09-30T15:57:23.379Z"
+      "date": "2026-09-30T17:14:39.354Z"
     },
     {
       "id": "msg-3",
@@ -102,7 +102,7 @@
       "senderName": "Ahmed",
       "isOutgoing": false,
       "text": "Can you send me the assignment?",
-      "date": "2026-09-30T16:05:23.379Z"
+      "date": "2026-09-30T17:22:39.354Z"
     },
     {
       "id": "msg-4",
@@ -111,7 +111,7 @@
       "senderName": "Abdullah",
       "isOutgoing": false,
       "text": "Let me know whenever you have 10 minutes to walk through the system architecture.",
-      "date": "2026-09-29T16:17:23.379Z"
+      "date": "2026-09-29T17:34:39.354Z"
     },
     {
       "id": "msg-5",
@@ -120,7 +120,7 @@
       "senderName": "You",
       "isOutgoing": true,
       "text": "Sure, we can connect tomorrow afternoon after Asr prayer.",
-      "date": "2026-09-29T22:17:23.379Z"
+      "date": "2026-09-29T23:34:39.354Z"
     },
     {
       "id": "msg-6",
@@ -129,7 +129,7 @@
       "senderName": "Fatima",
       "isOutgoing": false,
       "text": "Peace! The latest research report on distraction-free interfaces has been compiled.",
-      "date": "2026-09-30T15:17:23.379Z"
+      "date": "2026-09-30T16:34:39.354Z"
     },
     {
       "id": "msg-7",
@@ -138,7 +138,7 @@
       "senderName": "Fatima",
       "isOutgoing": false,
       "text": "I uploaded the key findings summary. Let me know what you think when you have time.",
-      "date": "2026-09-30T15:43:23.379Z",
+      "date": "2026-09-30T17:00:39.354Z",
       "media": {
         "type": "document",
         "url": "#",
@@ -153,7 +153,7 @@
       "senderName": "📚 Study Channel",
       "isOutgoing": false,
       "text": "Deep Work Tip: Attention is a finite mental muscle. Every time you switch contexts to check a notification preview, your prefrontal cortex suffers from cognitive residue. By eliminating previews and algorithmic feeds, you reclaim hours of focused thinking.",
-      "date": "2026-09-30T08:17:23.379Z"
+      "date": "2026-09-30T09:34:39.354Z"
     },
     {
       "id": "post-study-2",
@@ -162,7 +162,7 @@
       "senderName": "📚 Study Channel",
       "isOutgoing": false,
       "text": "Algorithms in modern messengers are engineered to maximize your screen time through variable reward schedules. A tool should be an instrument that waits for your deliberate intent, like a fountain pen.",
-      "date": "2026-09-30T14:17:23.379Z"
+      "date": "2026-09-30T15:34:39.354Z"
     },
     {
       "id": "post-islamic-1",
@@ -171,7 +171,7 @@
       "senderName": "🕌 Islamic Channel",
       "isOutgoing": false,
       "text": "\"Take benefit of five before five: your youth before your old age, your health before your sickness, your wealth before your poverty, your free time before your preoccupation, and your life before your death.\" — Prophetic Wisdom",
-      "date": "2026-09-30T10:17:23.379Z"
+      "date": "2026-09-30T11:34:39.354Z"
     },
     {
       "id": "post-news-1",
@@ -180,25 +180,7 @@
       "senderName": "📰 News Channel",
       "isOutgoing": false,
       "text": "Global Tech Report: Open standards in communication protocols gain traction as users increasingly demand sovereign data privacy and freedom from ad-driven algorithms.",
-      "date": "2026-09-30T15:17:23.379Z"
-    },
-    {
-      "id": "sim-1790785631111",
-      "peerId": "contact-ahmed",
-      "senderId": "contact-ahmed",
-      "senderName": "Ahmed",
-      "isOutgoing": false,
-      "text": "Are you available for a brief catch-up later this afternoon?",
-      "date": "2026-09-30T16:27:11.111Z"
-    },
-    {
-      "id": "sim-post-1790785650510",
-      "peerId": "channel-study",
-      "senderId": "channel-study",
-      "senderName": "📚 Study Channel",
-      "isOutgoing": false,
-      "text": "New dispatch: Continuous digital attention fragmentation reduces analytical depth. Cultivate intentional communication spaces.",
-      "date": "2026-09-30T16:27:30.510Z"
+      "date": "2026-09-30T16:34:39.354Z"
     }
   ],
   "settings": {

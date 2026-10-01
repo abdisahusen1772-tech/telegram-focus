@@ -11,13 +11,13 @@ import {
   EyeOff,
   Sparkles,
   Smartphone,
-  Sliders,
   Palette,
-  Volume2,
   Lock,
+  Check,
 } from 'lucide-react';
 import { UserSession, ApprovedContact, ApprovedChannel, AppSettings } from '@/lib/types';
 import { notifyContactMessage } from '@/lib/notifications';
+import { AppTheme, THEME_OPTIONS } from './ThemeSelectorModal';
 
 interface SettingsViewProps {
   session: UserSession | null;
@@ -25,6 +25,8 @@ interface SettingsViewProps {
   contacts: ApprovedContact[];
   channels: ApprovedChannel[];
   isApiConfigured: boolean;
+  currentTheme: AppTheme;
+  onSelectTheme: (theme: AppTheme) => void;
   onUpdateSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
   onRemoveContact: (id: string) => Promise<void>;
   onRemoveChannel: (id: string) => Promise<void>;
@@ -39,6 +41,8 @@ export function SettingsView({
   contacts,
   channels,
   isApiConfigured,
+  currentTheme,
+  onSelectTheme,
   onUpdateSettings,
   onRemoveContact,
   onRemoveChannel,
@@ -77,7 +81,7 @@ export function SettingsView({
         </p>
       </div>
 
-      {/* 1. Telegram Account */}
+      {/* 1. Telegram Account Connection */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Smartphone className="w-3.5 h-3.5 text-stone-500" />
@@ -106,35 +110,114 @@ export function SettingsView({
               <div className="flex justify-between items-center pt-2 border-t border-stone-200/60">
                 <span className="text-stone-400 font-mono text-[11px]">Connection</span>
                 <span className="font-mono text-[10px] uppercase px-2 py-0.5 rounded-full bg-stone-200/80 text-stone-800 font-medium">
-                  {session.isDemoMode ? 'Distraction-Free Sandbox' : 'MTProto Real Client'}
+                  {session.isDemoMode ? 'Distraction-Free Sandbox' : 'Official MTProto Active'}
                 </span>
               </div>
             </div>
 
-            <button
-              onClick={onDisconnectAccount}
-              className="w-full py-2.5 bg-stone-50 hover:bg-red-50 text-stone-600 hover:text-red-700 border border-stone-200 hover:border-red-200 text-xs font-medium rounded-lg transition flex items-center justify-center space-x-2 cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Disconnect Telegram</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              {session.isDemoMode && (
+                <button
+                  onClick={onOpenConnectModal}
+                  className="flex-1 py-2.5 bg-stone-900 hover:bg-stone-800 text-stone-50 text-xs font-medium rounded-lg transition cursor-pointer shadow-xs"
+                >
+                  Link Real Telegram Account
+                </button>
+              )}
+              <button
+                onClick={onDisconnectAccount}
+                className="py-2.5 px-3 bg-stone-50 hover:bg-red-50 text-stone-600 hover:text-red-700 border border-stone-200 hover:border-red-200 text-xs font-medium rounded-lg transition flex items-center justify-center space-x-1 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Disconnect</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-3 text-xs">
-            <p className="text-stone-500 leading-relaxed">
-              No Telegram account connected. Connect using official MTProto authentication to access approved contacts and channels.
+            <p className="text-stone-500 leading-relaxed font-sans">
+              No Telegram account connected. Connect to access your approved contacts and channels.
             </p>
             <button
               onClick={onOpenConnectModal}
               className="w-full py-2.5 bg-stone-900 hover:bg-stone-800 text-stone-50 text-xs font-medium rounded-lg transition cursor-pointer shadow-xs"
             >
-              Connect Telegram
+              Connect Telegram Account
             </button>
           </div>
         )}
       </section>
 
-      {/* 2. Focus & Anti-Distraction */}
+      {/* 2. Interface Themes (Choose from multiple colors) */}
+      <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
+            <Palette className="w-3.5 h-3.5 text-stone-500" />
+            <span>Interface Theme</span>
+          </div>
+          <span className="text-[10px] font-mono text-stone-400 uppercase">
+            {THEME_OPTIONS.find((t) => t.id === currentTheme)?.name}
+          </span>
+        </div>
+
+        <p className="text-[11px] text-stone-500 leading-relaxed font-sans">
+          Select a distraction-free color palette for day or night reading:
+        </p>
+
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          {THEME_OPTIONS.map((t) => {
+            const isSelected = currentTheme === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => onSelectTheme(t.id)}
+                className={`p-2.5 rounded-lg border text-left transition-all duration-150 relative cursor-pointer flex flex-col justify-between ${
+                  isSelected
+                    ? 'border-stone-900 ring-2 ring-stone-900/20 shadow-xs'
+                    : 'border-stone-200 hover:border-stone-400'
+                }`}
+                style={{ backgroundColor: t.bgHex }}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    className="text-[11px] font-semibold tracking-tight"
+                    style={{ color: t.textHex }}
+                  >
+                    {t.name}
+                  </span>
+                  {isSelected && (
+                    <span
+                      className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-white"
+                      style={{ backgroundColor: t.accentHex }}
+                    >
+                      <Check className="w-2 h-2 stroke-[3]" />
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-1.5 mt-2">
+                  <div
+                    className="w-2.5 h-2.5 rounded-full border border-black/10"
+                    style={{ backgroundColor: t.cardHex }}
+                  />
+                  <div
+                    className="w-2.5 h-2.5 rounded-full border border-black/10"
+                    style={{ backgroundColor: t.accentHex }}
+                  />
+                  <span
+                    className="text-[9px] font-mono ml-auto opacity-70"
+                    style={{ color: t.textHex }}
+                  >
+                    {t.category}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 3. Focus & Anti-Distraction */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Shield className="w-3.5 h-3.5 text-stone-500" />
@@ -143,7 +226,7 @@ export function SettingsView({
 
         <div className="flex items-center justify-between py-1">
           <div>
-            <p className="text-xs font-medium text-stone-900">Focus Mode</p>
+            <p className="text-xs font-medium text-stone-900">Focus Mode Active</p>
             <p className="text-[11px] text-stone-400">
               Enforces zero-preview alerts & blocks discovery
             </p>
@@ -159,26 +242,9 @@ export function SettingsView({
             {settings.focusMode ? 'ACTIVE' : 'OFF'}
           </button>
         </div>
-
-        <div className="flex items-center justify-between py-1 border-t border-stone-100 pt-2.5">
-          <div>
-            <p className="text-xs font-medium text-stone-900">E-Ink High-Contrast Paper</p>
-            <p className="text-[11px] text-stone-400">Tactile monochrome notebook aesthetic</p>
-          </div>
-          <button
-            onClick={() => onUpdateSettings({ highContrastEInk: !settings.highContrastEInk })}
-            className={`px-3 py-1 text-xs font-mono rounded-full cursor-pointer transition-all ${
-              settings.highContrastEInk
-                ? 'bg-stone-900 text-white shadow-xs'
-                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-            }`}
-          >
-            {settings.highContrastEInk ? 'ON' : 'OFF'}
-          </button>
-        </div>
       </section>
 
-      {/* 3. Notifications (Message Preview ALWAYS OFF) */}
+      {/* 4. Notifications (Message Preview ALWAYS OFF) */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Bell className="w-3.5 h-3.5 text-stone-500" />
@@ -254,7 +320,7 @@ export function SettingsView({
         </div>
       </section>
 
-      {/* 4. Manage Approved Content */}
+      {/* 5. Manage Approved Content */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-4">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Users className="w-3.5 h-3.5 text-stone-500" />
@@ -319,7 +385,7 @@ export function SettingsView({
         </div>
       </section>
 
-      {/* 5. Privacy & Data Storage */}
+      {/* 6. Privacy & Data Storage */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Lock className="w-3.5 h-3.5 text-stone-500" />
@@ -345,7 +411,7 @@ export function SettingsView({
         )}
       </section>
 
-      {/* 6. Manifesto & About */}
+      {/* 7. Manifesto & About */}
       <section className="bg-stone-100 border border-stone-200/80 rounded-xl p-4 space-y-2 text-xs text-stone-600">
         <div className="flex justify-between items-center font-mono">
           <span className="font-semibold text-stone-800">Telegram Focus Client</span>

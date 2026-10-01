@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPeerMessages, addMessageToPeer, markPeerAsRead, getUserSession, getApprovedContacts } from '@/lib/db';
-import { sendTelegramMessage } from '@/lib/telegram';
+import { sendTelegramMessage, syncMessagesFromTelegram } from '@/lib/telegram';
 import { Message } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -16,6 +16,15 @@ export async function GET(req: NextRequest) {
         { success: false, error: 'peerId query parameter is required' },
         { status: 400 }
       );
+    }
+
+    const session = getUserSession();
+    const contacts = getApprovedContacts();
+    const targetContact = contacts.find(c => c.id === peerId);
+
+    // If connected to real Telegram account, sync latest live messages
+    if (session && !session.isDemoMode && targetContact) {
+      await syncMessagesFromTelegram(peerId, targetContact.username);
     }
 
     const messages = getPeerMessages(peerId);

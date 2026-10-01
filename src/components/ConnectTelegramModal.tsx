@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Smartphone, KeyRound, Lock, AlertCircle, Loader2, Sparkles, CheckCircle, Info } from 'lucide-react';
+import { Smartphone, KeyRound, Lock, AlertCircle, Loader2, Sparkles, CheckCircle, Info, ExternalLink, Key } from 'lucide-react';
 
 interface ConnectTelegramModalProps {
   isOpen: boolean;
@@ -18,6 +18,9 @@ export function ConnectTelegramModal({
 }: ConnectTelegramModalProps) {
   const [step, setStep] = useState<'phone' | 'code' | '2fa'>('phone');
   const [phone, setPhone] = useState('');
+  const [apiId, setApiId] = useState('');
+  const [apiHash, setApiHash] = useState('');
+  const [showApiFields, setShowApiFields] = useState(!isApiConfigured);
   const [code, setCode] = useState('');
   const [phoneCodeHash, setPhoneCodeHash] = useState('');
   const [password2FA, setPassword2FA] = useState('');
@@ -40,7 +43,11 @@ export function ConnectTelegramModal({
       const res = await fetch('/api/auth/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber: cleanPhone }),
+        body: JSON.stringify({
+          phoneNumber: cleanPhone,
+          apiId: apiId.trim() || undefined,
+          apiHash: apiHash.trim() || undefined,
+        }),
       });
 
       const data = await res.json();
@@ -83,7 +90,7 @@ export function ConnectTelegramModal({
       if (!res.ok) {
         if (data.needs2FA) {
           setStep('2fa');
-          setError(data.error || 'Two-Factor Authentication is enabled. Please enter your password.');
+          setError(data.error || 'Two-Factor Authentication is enabled. Please enter your 2FA password.');
           setLoading(false);
           return;
         }
@@ -107,7 +114,7 @@ export function ConnectTelegramModal({
       const res = await fetch('/api/auth/demo-login', { method: 'POST' });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to activate demo mode');
+        throw new Error(data.error || 'Failed to activate sandbox');
       }
       onConnected();
       onClose();
@@ -120,13 +127,13 @@ export function ConnectTelegramModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-stone-50 border border-stone-300 w-full max-w-md rounded-lg shadow-xl p-6 text-stone-900">
+    <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-stone-50 border border-stone-300 w-full max-w-md rounded-2xl shadow-2xl p-6 text-stone-900 overflow-y-auto max-h-[90vh]">
         <div className="flex items-center justify-between pb-3 border-b border-stone-200">
           <div className="flex items-center space-x-2">
             <Lock className="w-4 h-4 text-stone-700" />
             <h2 className="text-sm font-semibold tracking-wide text-stone-900">
-              Connect Telegram Account
+              Connect Your Telegram Account
             </h2>
           </div>
           <button
@@ -137,35 +144,80 @@ export function ConnectTelegramModal({
           </button>
         </div>
 
-        {/* Telegram API config state pill */}
-        <div className="mt-3 mb-2 p-2.5 bg-stone-100 border border-stone-200 rounded text-xs">
-          <div className="flex items-center space-x-1.5 text-stone-700">
-            <Info className="w-3.5 h-3.5 text-stone-500 shrink-0" />
-            <span className="font-medium">
-              {isApiConfigured
-                ? 'Telegram MTProto API: Active'
-                : 'Telegram MTProto API: Ready for credentials'}
-            </span>
+        {/* Telegram API Status Info */}
+        <div className="mt-3 mb-2 p-3 bg-stone-100 border border-stone-200 rounded-xl text-xs space-y-1">
+          <div className="flex items-center justify-between text-stone-800">
+            <div className="flex items-center space-x-1.5">
+              <Info className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+              <span className="font-semibold">Official MTProto Authentication</span>
+            </div>
+            <a
+              href="https://my.telegram.org"
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-blue-600 hover:underline flex items-center space-x-0.5"
+            >
+              <span>my.telegram.org</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
           </div>
-          {!isApiConfigured && (
-            <p className="mt-1 text-[11px] text-stone-500 leading-tight">
-              To use your real Telegram account, add <code className="bg-stone-200 px-1 py-0.5 rounded font-mono">TELEGRAM_API_ID</code> & <code className="bg-stone-200 px-1 py-0.5 rounded font-mono">TELEGRAM_API_HASH</code> to <code className="bg-stone-200 px-1 py-0.5 rounded font-mono">.env.local</code> (obtained free from my.telegram.org).
-            </p>
-          )}
+          <p className="text-[11px] text-stone-500 leading-relaxed font-sans">
+            Connects securely using Telegram&apos;s native protocol. Once connected, your messages send and arrive in real-time.
+          </p>
         </div>
 
         {step === 'phone' && (
           <form onSubmit={handleSendCode} className="mt-4 space-y-4">
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Authenticate securely using your phone number via Telegram&apos;s official MTProto protocol. No passwords are requested upfront.
-            </p>
+            {/* Optional API ID & Hash form */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowApiFields(!showApiFields)}
+                className="text-[11px] font-mono text-stone-600 hover:text-stone-900 flex items-center space-x-1 cursor-pointer mb-2"
+              >
+                <Key className="w-3 h-3 text-stone-500" />
+                <span>{showApiFields ? 'Hide API credentials' : 'Enter my.telegram.org API credentials (optional)'}</span>
+              </button>
+
+              {showApiFields && (
+                <div className="p-3 bg-white border border-stone-200 rounded-xl space-y-2.5 mb-3">
+                  <p className="text-[10px] text-stone-500 font-sans">
+                    Get your free credentials in 1 minute from <a href="https://my.telegram.org" target="_blank" rel="noreferrer" className="text-blue-600 underline">my.telegram.org</a> $\to$ API development tools:
+                  </p>
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">
+                      API ID (App api_id)
+                    </label>
+                    <input
+                      type="text"
+                      value={apiId}
+                      onChange={(e) => setApiId(e.target.value)}
+                      placeholder="e.g. 12345678"
+                      className="w-full px-3 py-1.5 text-xs bg-stone-50 border border-stone-200 rounded font-mono focus:outline-none focus:border-stone-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">
+                      API Hash (App api_hash)
+                    </label>
+                    <input
+                      type="text"
+                      value={apiHash}
+                      onChange={(e) => setApiHash(e.target.value)}
+                      placeholder="e.g. 0123456789abcdef0123456789abcdef"
+                      className="w-full px-3 py-1.5 text-xs bg-stone-50 border border-stone-200 rounded font-mono focus:outline-none focus:border-stone-800"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div>
               <label className="block text-[11px] font-mono uppercase text-stone-600 mb-1">
-                Phone Number (with Country Code)
+                Your Telegram Phone Number
               </label>
               <div className="relative">
-                <Smartphone className="w-4 h-4 absolute left-3 top-2.5 text-stone-400" />
+                <Smartphone className="w-4 h-4 absolute left-3 top-3 text-stone-400" />
                 <input
                   type="tel"
                   value={phone}
@@ -173,13 +225,16 @@ export function ConnectTelegramModal({
                   placeholder="+1 555 123 4567"
                   required
                   autoFocus
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-stone-300 rounded font-mono focus:outline-none focus:border-stone-800 transition"
+                  className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
                 />
               </div>
+              <p className="text-[10px] text-stone-400 mt-1 font-mono">
+                Include country code (e.g. +1, +44, +971, +90, +966)
+              </p>
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-xs flex items-start space-x-2">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
@@ -188,10 +243,10 @@ export function ConnectTelegramModal({
             <button
               type="submit"
               disabled={loading || !phone.trim()}
-              className="w-full py-2.5 text-xs font-semibold uppercase tracking-wider text-stone-50 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded transition flex items-center justify-center space-x-1.5 cursor-pointer"
+              className="w-full py-2.5 text-xs font-semibold uppercase tracking-wider text-stone-50 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded-lg transition flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
             >
               {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              <span>{loading ? 'Sending Code...' : 'Send Telegram Code'}</span>
+              <span>{loading ? 'Requesting Telegram Code...' : 'Send Telegram Code'}</span>
             </button>
 
             <div className="pt-2 border-t border-stone-200">
@@ -199,10 +254,10 @@ export function ConnectTelegramModal({
                 type="button"
                 onClick={handleDemoActivate}
                 disabled={loading}
-                className="w-full py-2 text-xs font-medium text-stone-700 bg-stone-200 hover:bg-stone-300 rounded transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                className="w-full py-2 text-xs font-medium text-stone-700 bg-stone-200 hover:bg-stone-300 rounded-lg transition flex items-center justify-center space-x-1.5 cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5 text-stone-600" />
-                <span>Quick Test: Try Distraction-Free Sandbox</span>
+                <span>Test Drive in Sandbox Mode</span>
               </button>
             </div>
           </form>
@@ -210,12 +265,12 @@ export function ConnectTelegramModal({
 
         {step === 'code' && (
           <form onSubmit={handleVerifyCode} className="mt-4 space-y-4">
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Enter the verification code sent to your Telegram account or via SMS.
+            <p className="text-xs text-stone-600 leading-relaxed font-sans">
+              Enter the 5-digit verification code sent to your Telegram app or via SMS.
             </p>
 
             {statusNote && (
-              <div className="p-2.5 bg-stone-100 border border-stone-200 rounded text-stone-700 text-xs flex items-start space-x-2">
+              <div className="p-2.5 bg-stone-100 border border-stone-200 rounded-lg text-stone-700 text-xs flex items-start space-x-2">
                 <CheckCircle className="w-4 h-4 text-stone-600 shrink-0 mt-0.5" />
                 <span>{statusNote}</span>
               </div>
@@ -226,7 +281,7 @@ export function ConnectTelegramModal({
                 Verification Code
               </label>
               <div className="relative">
-                <KeyRound className="w-4 h-4 absolute left-3 top-2.5 text-stone-400" />
+                <KeyRound className="w-4 h-4 absolute left-3 top-3 text-stone-400" />
                 <input
                   type="text"
                   value={code}
@@ -234,13 +289,13 @@ export function ConnectTelegramModal({
                   placeholder="12345"
                   required
                   autoFocus
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-stone-300 rounded font-mono tracking-widest text-center focus:outline-none focus:border-stone-800 transition"
+                  className="w-full pl-9 pr-3 py-2.5 text-base bg-white border border-stone-300 rounded-lg font-mono tracking-widest text-center focus:outline-none focus:border-stone-800 transition"
                 />
               </div>
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-xs flex items-start space-x-2">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
@@ -250,17 +305,17 @@ export function ConnectTelegramModal({
               <button
                 type="button"
                 onClick={() => setStep('phone')}
-                className="py-2.5 px-3 text-xs font-medium text-stone-600 bg-stone-200 hover:bg-stone-300 rounded transition cursor-pointer"
+                className="py-2.5 px-3 text-xs font-medium text-stone-600 bg-stone-200 hover:bg-stone-300 rounded-lg transition cursor-pointer"
               >
                 Back
               </button>
               <button
                 type="submit"
                 disabled={loading || !code.trim()}
-                className="flex-1 py-2.5 text-xs font-semibold uppercase tracking-wider text-stone-50 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                className="flex-1 py-2.5 text-xs font-semibold uppercase tracking-wider text-stone-50 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded-lg transition flex items-center justify-center space-x-2 cursor-pointer"
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>{loading ? 'Verifying...' : 'Authenticate'}</span>
+                <span>{loading ? 'Verifying...' : 'Connect Account'}</span>
               </button>
             </div>
           </form>
@@ -268,16 +323,16 @@ export function ConnectTelegramModal({
 
         {step === '2fa' && (
           <form onSubmit={handleVerifyCode} className="mt-4 space-y-4">
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Two-Factor Authentication is active on this Telegram account. Enter your Telegram 2FA cloud password to complete sign-in.
+            <p className="text-xs text-stone-600 leading-relaxed font-sans">
+              Two-Factor Authentication is active on your Telegram account. Enter your Telegram 2FA cloud password to complete sign-in.
             </p>
 
             <div>
               <label className="block text-[11px] font-mono uppercase text-stone-600 mb-1">
-                2FA Password
+                Telegram 2FA Cloud Password
               </label>
               <div className="relative">
-                <Lock className="w-4 h-4 absolute left-3 top-2.5 text-stone-400" />
+                <Lock className="w-4 h-4 absolute left-3 top-3 text-stone-400" />
                 <input
                   type="password"
                   value={password2FA}
@@ -285,13 +340,13 @@ export function ConnectTelegramModal({
                   placeholder="••••••••"
                   required
                   autoFocus
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-stone-300 rounded font-mono focus:outline-none focus:border-stone-800 transition"
+                  className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
                 />
               </div>
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-xs flex items-start space-x-2">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs flex items-start space-x-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{error}</span>
               </div>
@@ -301,17 +356,17 @@ export function ConnectTelegramModal({
               <button
                 type="button"
                 onClick={() => setStep('code')}
-                className="py-2.5 px-3 text-xs font-medium text-stone-600 bg-stone-200 hover:bg-stone-300 rounded transition cursor-pointer"
+                className="py-2.5 px-3 text-xs font-medium text-stone-600 bg-stone-200 hover:bg-stone-300 rounded-lg transition cursor-pointer"
               >
                 Back
               </button>
               <button
                 type="submit"
                 disabled={loading || !password2FA.trim()}
-                className="flex-1 py-2.5 text-xs font-semibold uppercase tracking-wider text-stone-50 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                className="flex-1 py-2.5 text-xs font-semibold uppercase tracking-wider text-stone-50 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 rounded-lg transition flex items-center justify-center space-x-2 cursor-pointer"
               >
                 {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>{loading ? 'Authenticating...' : 'Confirm 2FA'}</span>
+                <span>{loading ? 'Authenticating...' : 'Confirm 2FA Password'}</span>
               </button>
             </div>
           </form>
