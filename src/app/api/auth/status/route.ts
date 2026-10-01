@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getUserSession, getAppSettings } from '@/lib/db';
+import { getUserSession, getAppSettings, getApiCredentials } from '@/lib/db';
 import { isTelegramApiConfigured } from '@/lib/telegram';
 
 export const runtime = 'nodejs';
@@ -11,12 +11,15 @@ export async function GET() {
     const settings = getAppSettings();
     const isApiConfigured = isTelegramApiConfigured();
 
+    const creds = getApiCredentials();
+
     return NextResponse.json({
       success: true,
       session,
       settings,
-      isApiConfigured,
-      apiIdPresent: Boolean(process.env.TELEGRAM_API_ID),
+      isApiConfigured: Boolean(creds?.apiId && creds?.apiHash),
+      credentials: creds,
+      apiIdPresent: Boolean(creds?.apiId),
     });
   } catch (error) {
     console.error('Error fetching auth status:', error);

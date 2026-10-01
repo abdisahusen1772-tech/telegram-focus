@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield,
   Bell,
@@ -14,6 +14,8 @@ import {
   Palette,
   Lock,
   Check,
+  Key,
+  ExternalLink,
 } from 'lucide-react';
 import { UserSession, ApprovedContact, ApprovedChannel, AppSettings } from '@/lib/types';
 import { notifyContactMessage } from '@/lib/notifications';
@@ -53,6 +55,52 @@ export function SettingsView({
   const [clearing, setClearing] = useState(false);
   const [clearSuccess, setClearSuccess] = useState(false);
   const [testNotificationSent, setTestNotificationSent] = useState(false);
+
+  // API credentials input state
+  const [apiIdInput, setApiIdInput] = useState('');
+  const [apiHashInput, setApiHashInput] = useState('');
+  const [savingCreds, setSavingCreds] = useState(false);
+  const [credsSaveMessage, setCredsSaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/credentials')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.credentials) {
+          setApiIdInput(d.credentials.apiId || '');
+          setApiHashInput(d.credentials.apiHash || '');
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveCredentials = async () => {
+    if (!apiIdInput.trim() || !apiHashInput.trim()) return;
+    setSavingCreds(true);
+    setCredsSaveMessage(null);
+
+    try {
+      const res = await fetch('/api/auth/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiId: apiIdInput.trim(),
+          apiHash: apiHashInput.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCredsSaveMessage('✓ Credentials saved & activated successfully!');
+        setTimeout(() => setCredsSaveMessage(null), 3500);
+      } else {
+        setCredsSaveMessage(`✕ Error: ${data.error || 'Failed to save'}`);
+      }
+    } catch {
+      setCredsSaveMessage('✕ Error saving credentials');
+    } finally {
+      setSavingCreds(false);
+    }
+  };
 
   const handleClearCache = async () => {
     setClearing(true);
@@ -148,7 +196,81 @@ export function SettingsView({
         )}
       </section>
 
-      {/* 2. Interface Themes (Choose from multiple colors) */}
+      {/* 2. Telegram API Credentials (my.telegram.org) - ALWAYS VISIBLE */}
+      <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
+            <Key className="w-3.5 h-3.5 text-stone-600" />
+            <span>Telegram API Credentials</span>
+          </div>
+          <a
+            href="https://my.telegram.org"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] text-blue-600 hover:underline flex items-center space-x-1 font-mono"
+          >
+            <span>my.telegram.org</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+
+        <p className="text-[11px] text-stone-500 leading-relaxed font-sans">
+          To connect your real personal Telegram account via MTProto, enter your free credentials from <a href="https://my.telegram.org" target="_blank" rel="noreferrer" className="text-blue-600 underline font-medium">my.telegram.org</a> $\to$ <strong>API development tools</strong>:
+        </p>
+
+        <div className="space-y-2.5 pt-1 text-xs">
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-stone-600 mb-1">
+              Telegram API ID (App api_id)
+            </label>
+            <input
+              type="text"
+              value={apiIdInput}
+              onChange={(e) => setApiIdInput(e.target.value)}
+              placeholder="e.g. 28475912"
+              className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-mono uppercase text-stone-600 mb-1">
+              Telegram API Hash (App api_hash)
+            </label>
+            <input
+              type="text"
+              value={apiHashInput}
+              onChange={(e) => setApiHashInput(e.target.value)}
+              placeholder="e.g. d3b07384d113edec49eaa6238ad5ff00"
+              className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
+            />
+          </div>
+
+          <div className="pt-1 flex items-center space-x-2">
+            <button
+              onClick={handleSaveCredentials}
+              disabled={savingCreds || !apiIdInput.trim() || !apiHashInput.trim()}
+              className="flex-1 py-2.5 bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-stone-50 text-xs font-medium rounded-lg transition cursor-pointer shadow-xs flex items-center justify-center space-x-1.5"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>{savingCreds ? 'Saving...' : 'Save Credentials'}</span>
+            </button>
+            <button
+              onClick={onOpenConnectModal}
+              className="py-2.5 px-3 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-medium rounded-lg transition cursor-pointer border border-stone-200"
+            >
+              Connect Phone →
+            </button>
+          </div>
+
+          {credsSaveMessage && (
+            <p className="text-[11px] text-emerald-700 text-center font-mono mt-1 font-medium">
+              {credsSaveMessage}
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* 3. Interface Themes (Choose from multiple colors) */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
@@ -217,7 +339,7 @@ export function SettingsView({
         </div>
       </section>
 
-      {/* 3. Focus & Anti-Distraction */}
+      {/* 4. Focus & Anti-Distraction */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Shield className="w-3.5 h-3.5 text-stone-500" />
@@ -244,7 +366,7 @@ export function SettingsView({
         </div>
       </section>
 
-      {/* 4. Notifications (Message Preview ALWAYS OFF) */}
+      {/* 5. Notifications (Message Preview ALWAYS OFF) */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Bell className="w-3.5 h-3.5 text-stone-500" />
@@ -320,7 +442,7 @@ export function SettingsView({
         </div>
       </section>
 
-      {/* 5. Manage Approved Content */}
+      {/* 6. Manage Approved Content */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-4">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Users className="w-3.5 h-3.5 text-stone-500" />
@@ -385,7 +507,7 @@ export function SettingsView({
         </div>
       </section>
 
-      {/* 6. Privacy & Data Storage */}
+      {/* 7. Privacy & Data Storage */}
       <section className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex items-center space-x-2 text-xs font-semibold text-stone-700 uppercase tracking-wider font-mono">
           <Lock className="w-3.5 h-3.5 text-stone-500" />
@@ -411,7 +533,7 @@ export function SettingsView({
         )}
       </section>
 
-      {/* 7. Manifesto & About */}
+      {/* 8. Manifesto & About */}
       <section className="bg-stone-100 border border-stone-200/80 rounded-xl p-4 space-y-2 text-xs text-stone-600">
         <div className="flex justify-between items-center font-mono">
           <span className="font-semibold text-stone-800">Telegram Focus Client</span>
