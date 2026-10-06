@@ -1,15 +1,15 @@
 {
   "session": {
-    "userId": "demo-user-12345",
-    "firstName": "Distraction-Free",
-    "lastName": "User",
-    "username": "focus_user",
-    "phone": "+1 (555) 019-2834",
-    "sessionString": "demo_session_active",
+    "userId": "1966911057",
+    "firstName": "~[ABDISA--",
+    "lastName": "HUSEIN]~",
+    "username": "Abdi1hu",
+    "phone": "251973301772",
+    "sessionString": "1BAAOMTQ5LjE1NC4xNjcuOTEAUH/lMv4XahGCdBWutdeyb74tAW+V+phJxH7SG9DQN+faOqWcy816oKMXsH5oww1yFaGBWUtSC4SVR/V4M+wdpiNHOnef03jgIHa3Lf2CxsUcaVlkiupW33z1DhxjKB9oPXOcEJ69uzROIi9ms7IPIV8+Sy+5zBpPfc+i9Gb78/8OHXhNKkyRkQjmqYT0le7dC0Sdr9lsIw3VB7N9JNhwW2DLpnx0iHMX7VMV0fwg1/R/ZR2I3wQo4S/dbco6Fx8WVndsGqDLp94afM/1I+s3acwIeN7+Co169x0gJhR+q0qtZLhGLuKamRP4DF64yEZNlz6eykUDYfgoojzWeXkszT8=",
     "isConnected": true,
-    "isDemoMode": true,
-    "connectedAt": "2026-09-30T19:18:55.969Z",
-    "lastSyncedAt": "2026-09-30T19:18:55.969Z"
+    "isDemoMode": false,
+    "connectedAt": "2026-10-01T06:04:12.633Z",
+    "lastSyncedAt": "2026-10-01T06:04:12.633Z"
   },
   "contacts": [
     {
@@ -42,6 +42,18 @@
       "notificationsEnabled": true,
       "addedAt": "2026-09-23T17:34:39.354Z",
       "lastMessageAt": "2026-09-30T17:00:39.354Z"
+    },
+    {
+      "id": "contact-7519298092",
+      "username": "Examcodeet",
+      "firstName": "exam code cracker",
+      "lastName": "",
+      "phone": "251704752242",
+      "status": "no_new_message",
+      "unreadCount": 0,
+      "notificationsEnabled": true,
+      "addedAt": "2026-10-01T06:05:05.458Z",
+      "lastMessageAt": "2026-10-01T06:05:05.458Z"
     }
   ],
   "channels": [
@@ -181,6 +193,69 @@
       "isOutgoing": false,
       "text": "Global Tech Report: Open standards in communication protocols gain traction as users increasingly demand sovereign data privacy and freedom from ad-driven algorithms.",
       "date": "2026-09-30T16:34:39.354Z"
+    },
+    {
+      "id": "tg-contact-7519298092-49314",
+      "peerId": "contact-7519298092",
+      "senderId": "contact-7519298092",
+      "senderName": "Examcodeet",
+      "isOutgoing": false,
+      "text": "Aselamu Alykum werahmetulahi weberkathu",
+      "date": "2026-10-01T06:05:37.000Z"
+    },
+    {
+      "id": "tg-contact-7519298092-46515",
+      "peerId": "contact-7519298092",
+      "senderId": "1966911057",
+      "senderName": "You",
+      "isOutgoing": true,
+      "text": "📎 [Media Attachment]",
+      "date": "2026-09-01T03:31:20.000Z"
+    },
+    {
+      "id": "tg-contact-7519298092-45250",
+      "peerId": "contact-7519298092",
+      "senderId": "1966911057",
+      "senderName": "You",
+      "isOutgoing": true,
+      "text": "🚀 We Offer SAT Registration Assistance! 🚀\n\nYou can register for any available SAT date for $90 instead of $111.\n\n✅ Official registration — you’ll receive an email confirmation and receipt.\n✅ Payment AFTER registration\n✅ Log in to your account and verify that you are officially registered.\n✅ Not a scam — you can verify the registration yourself.\n❌ This is NOT a fee waiver.\n\n📱 DM: @SAFOR2",
+      "date": "2026-08-14T07:39:27.000Z"
+    },
+    {
+      "id": "tg-contact-7519298092-45236",
+      "peerId": "contact-7519298092",
+      "senderId": "contact-7519298092",
+      "senderName": "Examcodeet",
+      "isOutgoing": false,
+      "text": "Abduselam Entrance.pdf",
+      "date": "2026-08-14T06:50:25.000Z"
+    },
+    {
+      "id": "tg-contact-7519298092-45200",
+      "peerId": "contact-7519298092",
+      "senderId": "1966911057",
+      "senderName": "You",
+      "isOutgoing": true,
+      "text": "https://t.me/askreddit",
+      "date": "2026-08-13T02:35:20.000Z"
+    },
+    {
+      "id": "tg-contact-7519298092-40466",
+      "peerId": "contact-7519298092",
+      "senderId": "1966911057",
+      "senderName": "You",
+      "isOutgoing": true,
+      "text": "👥 Refer & Earn Program\n\n🚀 Invite your friends and earn limitless crypto!\n🎁 You will receive $1.00 USDT for every valid user who joins through your link.\n\n🔗 Your Exclusive Referral Link:\nhttps://t.me/usdtxtrustwallte_tbbot?start=1966911057\n\n📢 Share this link with your network and start earning!",
+      "date": "2026-06-21T06:48:25.000Z"
+    },
+    {
+      "id": "tg-contact-7519298092-40465",
+      "peerId": "contact-7519298092",
+      "senderId": "contact-7519298092",
+      "senderName": "Examcodeet",
+      "isOutgoing": false,
+      "text": "Hi",
+      "date": "2026-06-21T06:48:07.000Z"
     }
   ],
   "settings": {
@@ -197,7 +272,8 @@
     "contactNotifications": {
       "contact-ahmed": true,
       "contact-abdullah": true,
-      "contact-fatima": true
+      "contact-fatima": true,
+      "contact-7519298092": true
     },
     "theme": "nordic"
   },
