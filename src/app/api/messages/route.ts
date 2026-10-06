@@ -5,6 +5,7 @@ import { Message } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET(req: NextRequest) {
   try {
@@ -20,22 +21,29 @@ export async function GET(req: NextRequest) {
 
     const session = getUserSession();
     const contacts = getApprovedContacts();
+    const channels = getApprovedChannels();
     const cleanId = peerId.toLowerCase().replace(/^@/, '');
     const targetContact = contacts.find(c =>
       c.id === peerId ||
       c.username.toLowerCase() === cleanId ||
       c.id.toLowerCase() === `contact-${cleanId}`
     );
+    const targetChannel = channels.find(ch =>
+      ch.id === peerId ||
+      ch.username.toLowerCase() === cleanId ||
+      ch.id.toLowerCase() === `channel-${cleanId}`
+    );
 
     // 1. Immediately retrieve locally cached messages for instant rendering
     let messages = getPeerMessages(peerId);
 
-    // 2. If connected to real Telegram, attempt live sync with 1.2s timeout
-    // This ensures fast response on Vercel without blocking or timing out
-    if (session && !session.isDemoMode && targetContact) {
+    // 2. If connected to real Telegram, attempt live sync with 6.5s timeout
+    if (session && !session.isDemoMode && session.isConnected && session.sessionString && (targetContact || targetChannel)) {
       try {
-        const syncPromise = syncMessagesFromTelegram(targetContact.id, targetContact.username);
-        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 1200));
+        const syncId = targetContact?.id || targetChannel?.id || peerId;
+        const syncUser = targetContact?.username || targetChannel?.username || '';
+        const syncPromise = syncMessagesFromTelegram(syncId, syncUser);
+        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6500));
         await Promise.race([syncPromise, timeoutPromise]);
         // Refresh messages in case new ones were saved
         messages = getPeerMessages(peerId);

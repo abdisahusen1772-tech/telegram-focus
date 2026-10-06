@@ -8,6 +8,7 @@ interface AddPeerModalProps {
   type: 'contact' | 'channel';
   onClose: () => void;
   onSuccess: (data: unknown) => void;
+  onOpenConnectModal?: () => void;
 }
 
 interface JoinedDialogItem {
@@ -20,12 +21,13 @@ interface JoinedDialogItem {
   isAlreadyAdded?: boolean;
 }
 
-export function AddPeerModal({ isOpen, type, onClose, onSuccess }: AddPeerModalProps) {
+export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectModal }: AddPeerModalProps) {
   const [activeTab, setActiveTab] = useState<'username' | 'dialogs'>('username');
   const [username, setUsername] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [dialogs, setDialogs] = useState<JoinedDialogItem[]>([]);
   const [loadingDialogs, setLoadingDialogs] = useState(false);
+  const [isNotConnected, setIsNotConnected] = useState(false);
   const [addingDialogId, setAddingDialogId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +52,10 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess }: AddPeerModalP
     try {
       const res = await fetch('/api/telegram/dialogs');
       const data = await res.json();
-      if (data.success && Array.isArray(data.dialogs)) {
+      if (data.notConnected) {
+        setIsNotConnected(true);
+      } else if (data.success && Array.isArray(data.dialogs)) {
+        setIsNotConnected(false);
         setDialogs(data.dialogs);
       }
     } catch (err) {
@@ -253,14 +258,42 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess }: AddPeerModalP
               />
             </div>
 
-            {loadingDialogs ? (
+            {isNotConnected ? (
+              <div className="py-6 px-3 text-center space-y-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <p className="text-xs font-semibold text-amber-900">
+                  Telegram Account Not Connected
+                </p>
+                <p className="text-[11px] text-amber-700 leading-relaxed font-sans">
+                  Please connect your Telegram account first to load and search your actual joined groups and channels.
+                </p>
+                {onOpenConnectModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenConnectModal();
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium bg-amber-900 text-white hover:bg-amber-800 rounded-lg transition cursor-pointer shadow-xs"
+                  >
+                    Connect Telegram Account →
+                  </button>
+                )}
+              </div>
+            ) : loadingDialogs ? (
               <div className="py-8 flex flex-col items-center justify-center text-xs text-stone-400 font-mono space-y-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>Loading your joined groups...</span>
               </div>
             ) : dialogs.length === 0 ? (
-              <div className="py-6 text-center text-xs text-stone-400 font-mono">
-                No joined private groups or channels found.
+              <div className="py-6 text-center text-xs text-stone-500 font-sans space-y-2">
+                <p>No joined channels or groups found in your Telegram account.</p>
+                <button
+                  type="button"
+                  onClick={loadDialogs}
+                  className="text-[11px] font-mono text-stone-700 underline hover:text-black cursor-pointer"
+                >
+                  ↻ Refresh Telegram Groups
+                </button>
               </div>
             ) : (() => {
               const q = searchQuery.toLowerCase().trim();

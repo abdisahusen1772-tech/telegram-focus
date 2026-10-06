@@ -25,15 +25,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       phoneCodeHash: result.phoneCodeHash,
+      intermediateSession: result.intermediateSession,
       isRegistered: result.isRegistered,
       isMock: result.isMock,
       message: result.isMock
         ? 'Test mode: Use verification code 12345 (or any 5-digit code) to test'
         : 'Official Telegram verification code sent to your Telegram app / SMS',
     });
+
+    if (result.intermediateSession) {
+      response.cookies.set('tg_auth_temp_session', result.intermediateSession, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 60 * 15, // 15 minutes
+        path: '/',
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error('Error in send-code route:', error);
     return NextResponse.json(

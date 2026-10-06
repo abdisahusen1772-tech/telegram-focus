@@ -22,6 +22,7 @@ export function ConnectTelegramModal({
   const [apiHash, setApiHash] = useState('');
   const [code, setCode] = useState('');
   const [phoneCodeHash, setPhoneCodeHash] = useState('');
+  const [intermediateSession, setIntermediateSession] = useState('');
   const [password2FA, setPassword2FA] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +74,9 @@ export function ConnectTelegramModal({
       }
 
       setPhoneCodeHash(data.phoneCodeHash);
+      if (data.intermediateSession) {
+        setIntermediateSession(data.intermediateSession);
+      }
       setStatusNote(data.message || 'Verification code sent to your Telegram app / SMS');
       setStep('code');
     } catch (err: unknown) {
@@ -98,6 +102,7 @@ export function ConnectTelegramModal({
           phoneNumber: phone.trim(),
           phoneCode: code.trim(),
           phoneCodeHash,
+          intermediateSession: intermediateSession || undefined,
           password: password2FA.trim() || undefined,
         }),
       });

@@ -330,6 +330,29 @@ export default function TelegramFocusApp() {
           isSyncing={isSyncing}
         />
 
+        {/* Telegram Session Disconnected / Expired Alert Banner */}
+        {!session?.isConnected && (
+          <div className="bg-amber-900/90 text-amber-50 px-3.5 py-2 mx-3 mt-2 rounded-xl border border-amber-700/80 shadow-xs flex items-center justify-between z-30 shrink-0">
+            <div className="flex items-center space-x-2 overflow-hidden">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <div className="truncate">
+                <p className="text-xs font-semibold tracking-tight text-white truncate">
+                  Telegram Disconnected
+                </p>
+                <p className="text-[10px] text-amber-200/90 font-mono truncate">
+                  Connect account to load your real groups & receive messages
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsConnectModalOpen(true)}
+              className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded bg-amber-800 hover:bg-amber-700 text-amber-100 border border-amber-600 transition cursor-pointer shrink-0 ml-2"
+            >
+              Connect →
+            </button>
+          </div>
+        )}
+
         {/* Top Incoming Contact Alert Banner (Check on PC or open directly) */}
         {!activeContact && !activeChannel && (
           contacts.some((c) => c.status === 'new_message') ? (
@@ -520,6 +543,7 @@ export default function TelegramFocusApp() {
           type={addModalType}
           onClose={() => setAddModalType(null)}
           onSuccess={loadData}
+          onOpenConnectModal={() => setIsConnectModalOpen(true)}
         />
       )}
 

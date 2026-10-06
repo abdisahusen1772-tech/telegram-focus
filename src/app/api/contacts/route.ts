@@ -4,14 +4,15 @@ import { verifyTelegramUsername, syncContactUnreadStatusFromTelegram } from '@/l
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET() {
   try {
     const session = getUserSession();
-    if (session && !session.isDemoMode) {
+    if (session && !session.isDemoMode && session.isConnected && session.sessionString) {
       try {
         const syncPromise = syncContactUnreadStatusFromTelegram();
-        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 1200));
+        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6500));
         await Promise.race([syncPromise, timeoutPromise]);
       } catch (syncErr) {
         console.warn('Real contact unread sync warning:', syncErr);

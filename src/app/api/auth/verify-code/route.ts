@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { phoneNumber, phoneCode, phoneCodeHash, password } = body;
+    const { phoneNumber, phoneCode, phoneCodeHash, password, intermediateSession } = body;
 
     if (!phoneNumber || !phoneCode || !phoneCodeHash) {
       return NextResponse.json(
@@ -17,11 +17,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const sessionToUse = intermediateSession || req.cookies.get('tg_auth_temp_session')?.value;
+
     const result = await signInWithTelegramCode({
       phoneNumber,
       phoneCode: phoneCode.trim(),
       phoneCodeHash,
       password: password ? password.trim() : undefined,
+      intermediateSession: sessionToUse,
     });
 
     if (!result.success) {

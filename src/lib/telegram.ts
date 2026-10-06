@@ -1,6 +1,6 @@
 import { TelegramClient, Api, sessions } from 'telegram';
 const { StringSession } = sessions;
-import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages, getApprovedContacts, updateContactStatus } from './db';
+import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages, getApprovedContacts, updateContactStatus, addApprovedContact } from './db';
 import { ApprovedContact, ApprovedChannel, Message } from './types';
 
 // In-memory active client reference
@@ -42,13 +42,13 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
     const stringSession = new StringSession(sessionString);
     const client = new TelegramClient(stringSession, apiId, apiHash, {
       connectionRetries: 2,
-      timeout: 5,
+      timeout: 8,
       useWSS: false,
     });
 
     const connectPromise = client.connect();
     const timeoutPromise = new Promise<void>((_, reject) =>
-      setTimeout(() => reject(new Error('MTProto connection timeout')), 4500)
+      setTimeout(() => reject(new Error('MTProto connection timeout')), 8000)
     );
 
     await Promise.race([connectPromise, timeoutPromise]);
@@ -56,6 +56,25 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
     return client;
   } catch (err) {
     console.warn('Could not establish Telegram MTProto client connection:', err);
+    const errStr = String(err);
+    if (
+      errStr.includes('AUTH_KEY_DUPLICATED') ||
+      errStr.includes('AUTH_KEY_UNREGISTERED') ||
+      errStr.includes('SESSION_REVOKED') ||
+      errStr.includes('406') ||
+      errStr.includes('401')
+    ) {
+      console.warn('Telegram session key invalidated by Telegram DC (AUTH_KEY_DUPLICATED). Resetting session to disconnected.');
+      const current = getUserSession();
+      if (current) {
+        setUserSession({
+          ...current,
+          isConnected: false,
+          sessionString: '',
+        });
+      }
+      activeClient = null;
+    }
     return null;
   }
 }
@@ -66,6 +85,7 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
 export async function sendTelegramVerificationCode(phoneNumber: string, apiIdParam?: string, apiHashParam?: string): Promise<{
   success: boolean;
   phoneCodeHash?: string;
+  intermediateSession?: string;
   isRegistered?: boolean;
   error?: string;
   isMock?: boolean;
@@ -85,6 +105,7 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
       const stringSession = new StringSession('');
       const client = new TelegramClient(stringSession, apiId, apiHash, {
         connectionRetries: 3,
+        timeout: 10,
       });
 
       await client.connect();
@@ -100,10 +121,12 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
 
       currentPhoneCodeHash = result.phoneCodeHash;
       currentPhoneNumber = cleanPhone;
+      const intermediateSession = (client.session.save() as unknown as string) || '';
 
       return {
         success: true,
         phoneCodeHash: result.phoneCodeHash,
+        intermediateSession,
         isRegistered: result.isCodeViaApp !== undefined,
         isMock: false,
       };
@@ -136,6 +159,7 @@ export async function signInWithTelegramCode(params: {
   phoneCode: string;
   phoneCodeHash: string;
   password?: string;
+  intermediateSession?: string;
 }): Promise<{
   success: boolean;
   needs2FA?: boolean;
@@ -148,7 +172,7 @@ export async function signInWithTelegramCode(params: {
   };
   error?: string;
 }> {
-  const { phoneNumber, phoneCode, phoneCodeHash, password } = params;
+  const { phoneNumber, phoneCode, phoneCodeHash, password, intermediateSession } = params;
 
   const creds = getActiveApiCredentials();
   if (creds) {
@@ -156,9 +180,10 @@ export async function signInWithTelegramCode(params: {
       const { apiId, apiHash } = creds;
 
       if (!activeClient || !activeClient.connected) {
-        const stringSession = new StringSession('');
+        const stringSession = new StringSession(intermediateSession || '');
         activeClient = new TelegramClient(stringSession, apiId, apiHash, {
           connectionRetries: 3,
+          timeout: 10,
         });
         await activeClient.connect();
       }
@@ -458,9 +483,55 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
   }
 
   try {
-    const cleanUsername = peerUsername.replace(/^@/, '').trim();
-    const entity = await client.getEntity(cleanUsername);
-    const tgMessages = await client.getMessages(entity, { limit: 25 });
+    const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim() : '';
+    let entity: unknown = null;
+
+    // Try resolving entity by username first if valid
+    if (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+      try {
+        entity = await client.getEntity(cleanUsername);
+      } catch {
+        // ignore
+      }
+    }
+
+    // Fallback to resolving by numerical ID
+    if (!entity) {
+      const rawId = peerId.replace(/^contact-/, '').replace(/^channel-/, '');
+      try {
+        const numId = parseInt(rawId, 10);
+        if (!isNaN(numId)) {
+          entity = await client.getEntity(numId);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!entity) {
+      // Search dialogs to find matching entity
+      const dialogs = await client.getDialogs({ limit: 100 });
+      const rawId = peerId.replace(/^contact-/, '').replace(/^channel-/, '');
+      const matched = dialogs.find((d) => {
+        const dId = d.id ? d.id.toString() : '';
+        const dEntity = d.entity as { username?: string } | undefined;
+        return (
+          dId === rawId ||
+          dId === peerId ||
+          (cleanUsername && dEntity?.username?.toLowerCase() === cleanUsername.toLowerCase())
+        );
+      });
+      if (matched) {
+        entity = matched.entity;
+      }
+    }
+
+    if (!entity) {
+      console.warn(`Could not resolve entity for peerId: ${peerId}, username: ${peerUsername}`);
+      return [];
+    }
+
+    const tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], { limit: 35 });
     const me = (await client.getMe()) as unknown as { id: { toString: () => string }; firstName?: string };
     const myId = me?.id ? me.id.toString() : 'me';
 
@@ -478,7 +549,7 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
         id: `tg-${peerId}-${msgId}`,
         peerId,
         senderId: isOut ? myId : peerId,
-        senderName: isOut ? 'You' : cleanUsername,
+        senderName: isOut ? 'You' : (cleanUsername || 'Contact'),
         isOutgoing: isOut,
         text: textContent || '📎 [Media Attachment]',
         date: mDate,
@@ -514,7 +585,7 @@ export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
   const client = await getOrInitTelegramClient();
   if (client && client.connected) {
     try {
-      const dialogs = await client.getDialogs({ limit: 120 });
+      const dialogs = await client.getDialogs({ limit: 150 });
       const results: TelegramJoinedDialog[] = [];
 
       for (const d of dialogs) {
@@ -534,7 +605,7 @@ export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
         const idStr = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
         if (!idStr) continue;
 
-        const title = d.title || entity?.title || 'Private Group';
+        const title = d.title || entity?.title || 'Group / Channel';
         const username = entity?.username || undefined;
         const isPrivate = !username;
 
@@ -551,50 +622,27 @@ export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
 
       return results;
     } catch (err) {
-      console.warn('Telegram getDialogs notice:', err);
+      console.warn('Telegram getDialogs error:', err);
     }
   }
 
-  // Simulated private groups/channels for sandbox / offline mode
-  return [
-    {
-      id: '-100987654321',
-      title: '📚 SAT & CS Study Group',
-      isGroup: true,
-      isChannel: false,
-      isPrivate: true,
-      unreadCount: 0,
-    },
-    {
-      id: '-100876543210',
-      title: '🏠 Private Family Circle',
-      isGroup: true,
-      isChannel: false,
-      isPrivate: true,
-      unreadCount: 0,
-    },
-    {
-      id: '-100765432109',
-      title: '🔒 Research Dispatch (Private Channel)',
-      isGroup: false,
-      isChannel: true,
-      isPrivate: true,
-      unreadCount: 0,
-    },
-  ];
+  // Strictly return empty list when disconnected - zero mock groups!
+  return [];
 }
 
 /**
  * Synchronize real Telegram unread message status for approved contacts from official MTProto dialogs
+ * ALSO discovers any unread messages received from ANY Telegram contact so user never misses a notification!
  */
 export async function syncContactUnreadStatusFromTelegram(): Promise<void> {
   const client = await getOrInitTelegramClient();
   if (!client || !client.connected) return;
 
   try {
-    const dialogs = await client.getDialogs({ limit: 80 });
+    const dialogs = await client.getDialogs({ limit: 100 });
     const contacts = getApprovedContacts();
 
+    // 1. Sync unread state for all existing approved contacts
     for (const contact of contacts) {
       const cleanUsername = contact.username.toLowerCase().replace(/^@/, '');
       const cleanId = contact.id.toLowerCase().replace(/^contact-/, '');
@@ -616,6 +664,43 @@ export async function syncContactUnreadStatusFromTelegram(): Promise<void> {
       } else {
         // Contact has no active unread dialog in Telegram
         updateContactStatus(contact.id, 'no_new_message', 0);
+      }
+    }
+
+    // 2. Discover ANY real Telegram 1-on-1 contact dialog with unread messages!
+    for (const d of dialogs) {
+      if (d.isUser && d.unreadCount && d.unreadCount > 0) {
+        const entity = d.entity as unknown as {
+          id?: { toString: () => string };
+          username?: string;
+          firstName?: string;
+          lastName?: string;
+          phone?: string;
+        };
+        const dId = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
+        const dUser = entity?.username?.toLowerCase() || '';
+
+        const alreadyExists = contacts.some((c) => {
+          const cUser = c.username.toLowerCase().replace(/^@/, '');
+          const cId = c.id.toLowerCase().replace(/^contact-/, '');
+          return (dUser && cUser === dUser) || (dId && (cId === dId || c.id === dId));
+        });
+
+        if (!alreadyExists && dId) {
+          // Auto-register new contact who sent a message so the user gets alerted immediately!
+          addApprovedContact({
+            id: `contact-${dId}`,
+            username: entity?.username || `user_${dId}`,
+            firstName: d.title || entity?.firstName || 'Telegram Contact',
+            lastName: entity?.lastName || '',
+            phone: entity?.phone || undefined,
+            status: 'new_message',
+            unreadCount: d.unreadCount,
+            notificationsEnabled: true,
+            addedAt: new Date().toISOString(),
+            lastMessageAt: new Date().toISOString(),
+          });
+        }
       }
     }
   } catch (err) {
