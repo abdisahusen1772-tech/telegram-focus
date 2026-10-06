@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApprovedContacts, addApprovedContact, removeApprovedContact } from '@/lib/db';
-import { verifyTelegramUsername } from '@/lib/telegram';
+import { getApprovedContacts, addApprovedContact, removeApprovedContact, getUserSession } from '@/lib/db';
+import { verifyTelegramUsername, syncContactUnreadStatusFromTelegram } from '@/lib/telegram';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
+    const session = getUserSession();
+    if (session && !session.isDemoMode) {
+      try {
+        const syncPromise = syncContactUnreadStatusFromTelegram();
+        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 1200));
+        await Promise.race([syncPromise, timeoutPromise]);
+      } catch (syncErr) {
+        console.warn('Real contact unread sync warning:', syncErr);
+      }
+    }
+
     const contacts = getApprovedContacts();
     return NextResponse.json({
       success: true,

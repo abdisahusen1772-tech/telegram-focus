@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Plus, Shield, Sparkles, Radio, MessageSquare, Check, Bell } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { ApprovedContact, ApprovedChannel } from '@/lib/types';
 
 interface HomeScreenProps {
@@ -10,7 +10,7 @@ interface HomeScreenProps {
   onSelectChannel: (channel: ApprovedChannel) => void;
   onSelectContact: (contact: ApprovedContact) => void;
   onOpenAddModal: (type: 'contact' | 'channel') => void;
-  onSimulateIncoming: (peerId: string) => void;
+  onSimulateIncoming?: (peerId: string) => void;
   focusMode: boolean;
   onOpenFocusModal: () => void;
   onOpenThemeModal?: () => void;
@@ -23,7 +23,6 @@ export function HomeScreen({
   onSelectChannel,
   onSelectContact,
   onOpenAddModal,
-  onSimulateIncoming,
   focusMode,
   onOpenFocusModal,
   onOpenThemeModal,
@@ -117,15 +116,6 @@ export function HomeScreen({
                   </div>
 
                   <div className="flex items-center space-x-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    {/* Live simulation ping for demonstration */}
-                    <button
-                      onClick={() => onSimulateIncoming(channel.id)}
-                      className="opacity-0 group-hover:opacity-100 text-[10px] text-stone-400 hover:text-stone-800 transition font-mono px-1.5 py-0.5 rounded hover:bg-stone-100 cursor-pointer"
-                      title="Simulate new channel post"
-                    >
-                      ping
-                    </button>
-
                     {channel.hasNewPost && (
                       <span
                         className="w-2.5 h-2.5 rounded-full bg-blue-600 shadow-xs"
@@ -187,15 +177,6 @@ export function HomeScreen({
                     </div>
 
                     <div className="flex items-center space-x-3 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {/* Live demonstration trigger */}
-                      <button
-                        onClick={() => onSimulateIncoming(contact.id)}
-                        className="opacity-0 group-hover:opacity-100 text-[10px] text-stone-400 hover:text-stone-800 transition font-mono px-1.5 py-0.5 rounded hover:bg-stone-100 cursor-pointer"
-                        title={`Simulate message from ${contact.firstName}`}
-                      >
-                        ping
-                      </button>
-
                       {/* Status indicator: 🔵 New message vs ⚪ No new message */}
                       <div
                         onClick={() => onSelectContact(contact)}

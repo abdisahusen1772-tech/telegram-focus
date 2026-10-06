@@ -331,38 +331,52 @@ export default function TelegramFocusApp() {
         />
 
         {/* Top Incoming Contact Alert Banner (Check on PC or open directly) */}
-        {!activeContact && !activeChannel && contacts.some((c) => c.status === 'new_message') && (
-          <div className="bg-stone-900 text-stone-50 px-3.5 py-2.5 mx-3 mt-2 rounded-xl border border-stone-800 shadow-md flex items-center justify-between z-30 shrink-0">
-            <div className="flex items-center space-x-2.5 overflow-hidden">
-              <span className="w-2.5 h-2.5 rounded-full indicator-blue animate-pulse shrink-0" />
-              <div className="truncate">
-                <p className="text-xs font-semibold tracking-tight text-white truncate">
-                  {(() => {
-                    const unread = contacts.filter((c) => c.status === 'new_message');
-                    if (unread.length === 1) {
-                      return `New message from ${unread[0].firstName} ${unread[0].lastName || ''}`.trim();
-                    }
-                    return `New messages from ${unread.map((c) => c.firstName).join(', ')}`;
-                  })()}
-                </p>
-                <p className="text-[10px] text-stone-400 font-mono truncate">
-                  Received on Telegram · Check on your PC or tap to open
+        {!activeContact && !activeChannel && (
+          contacts.some((c) => c.status === 'new_message') ? (
+            <div className="bg-stone-900 text-stone-50 px-3.5 py-2.5 mx-3 mt-2 rounded-xl border border-stone-800 shadow-md flex items-center justify-between z-30 shrink-0">
+              <div className="flex items-center space-x-2.5 overflow-hidden">
+                <span className="w-2.5 h-2.5 rounded-full indicator-blue animate-pulse shrink-0" />
+                <div className="truncate">
+                  <p className="text-xs font-semibold tracking-tight text-white truncate">
+                    {(() => {
+                      const unread = contacts.filter((c) => c.status === 'new_message');
+                      if (unread.length === 1) {
+                        return `New message from ${unread[0].firstName} ${unread[0].lastName || ''}`.trim();
+                      }
+                      return `New messages from ${unread.map((c) => c.firstName).join(', ')}`;
+                    })()}
+                  </p>
+                  <p className="text-[10px] text-stone-400 font-mono truncate">
+                    Received on Telegram · Check on your PC or tap to open
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const target = contacts.find((c) => c.status === 'new_message');
+                  if (target) {
+                    setActiveContact(target);
+                    setActiveChannel(null);
+                  }
+                }}
+                className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 transition cursor-pointer shrink-0 ml-2"
+              >
+                Open →
+              </button>
+            </div>
+          ) : (
+            <div className="bg-stone-100/90 dark:bg-stone-900/40 text-stone-600 dark:text-stone-300 px-3.5 py-2 mx-3 mt-2 rounded-xl border border-stone-200/80 dark:border-stone-800/80 flex items-center justify-between z-30 shrink-0">
+              <div className="flex items-center space-x-2 overflow-hidden">
+                <span className="w-2 h-2 rounded-full indicator-white shrink-0" />
+                <p className="text-xs font-mono tracking-tight text-stone-600 dark:text-stone-300 truncate">
+                  You have no message from contact
                 </p>
               </div>
+              <span className="text-[10px] font-mono text-stone-400 dark:text-stone-500 shrink-0 ml-2">
+                All caught up
+              </span>
             </div>
-            <button
-              onClick={() => {
-                const target = contacts.find((c) => c.status === 'new_message');
-                if (target) {
-                  setActiveContact(target);
-                  setActiveChannel(null);
-                }
-              }}
-              className="text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 transition cursor-pointer shrink-0 ml-2"
-            >
-              Open →
-            </button>
-          </div>
+          )
         )}
 
         {/* Distraction-Free In-App Notification Toast */}

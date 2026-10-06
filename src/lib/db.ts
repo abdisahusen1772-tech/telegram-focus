@@ -50,7 +50,7 @@ const DEFAULT_CHANNELS: ApprovedChannel[] = [
     notificationsEnabled: true,
     addedAt: new Date(Date.now() - 86400000 * 5).toISOString(),
     lastPostAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    hasNewPost: true,
+    hasNewPost: false,
   },
   {
     id: 'channel-islamic',
@@ -70,7 +70,7 @@ const DEFAULT_CHANNELS: ApprovedChannel[] = [
     notificationsEnabled: true,
     addedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
     lastPostAt: new Date(Date.now() - 3600000 * 1).toISOString(),
-    hasNewPost: true,
+    hasNewPost: false,
   },
 ];
 
@@ -80,8 +80,8 @@ const DEFAULT_CONTACTS: ApprovedContact[] = [
     username: 'ahmed_dev',
     firstName: 'Ahmed',
     lastName: 'K.',
-    status: 'new_message', // 🔵 New message
-    unreadCount: 1,
+    status: 'no_new_message', // ⚪ No fake unread indicators
+    unreadCount: 0,
     notificationsEnabled: true,
     addedAt: new Date(Date.now() - 86400000 * 10).toISOString(),
     lastMessageAt: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
@@ -100,8 +100,8 @@ const DEFAULT_CONTACTS: ApprovedContact[] = [
     id: 'contact-fatima',
     username: 'fatima_research',
     firstName: 'Fatima',
-    status: 'new_message', // 🔵 New message
-    unreadCount: 2,
+    status: 'no_new_message', // ⚪ No fake unread indicators
+    unreadCount: 0,
     notificationsEnabled: true,
     addedAt: new Date(Date.now() - 86400000 * 7).toISOString(),
     lastMessageAt: new Date(Date.now() - 1000 * 60 * 34).toISOString(),

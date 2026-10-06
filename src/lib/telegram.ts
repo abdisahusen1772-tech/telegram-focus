@@ -1,6 +1,6 @@
 import { TelegramClient, Api, sessions } from 'telegram';
 const { StringSession } = sessions;
-import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages } from './db';
+import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages, getApprovedContacts, updateContactStatus } from './db';
 import { ApprovedContact, ApprovedChannel, Message } from './types';
 
 // In-memory active client reference
@@ -514,7 +514,7 @@ export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
   const client = await getOrInitTelegramClient();
   if (client && client.connected) {
     try {
-      const dialogs = await client.getDialogs({ limit: 60 });
+      const dialogs = await client.getDialogs({ limit: 120 });
       const results: TelegramJoinedDialog[] = [];
 
       for (const d of dialogs) {
@@ -563,7 +563,7 @@ export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
       isGroup: true,
       isChannel: false,
       isPrivate: true,
-      unreadCount: 1,
+      unreadCount: 0,
     },
     {
       id: '-100876543210',
@@ -579,7 +579,46 @@ export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
       isGroup: false,
       isChannel: true,
       isPrivate: true,
-      unreadCount: 2,
+      unreadCount: 0,
     },
   ];
+}
+
+/**
+ * Synchronize real Telegram unread message status for approved contacts from official MTProto dialogs
+ */
+export async function syncContactUnreadStatusFromTelegram(): Promise<void> {
+  const client = await getOrInitTelegramClient();
+  if (!client || !client.connected) return;
+
+  try {
+    const dialogs = await client.getDialogs({ limit: 80 });
+    const contacts = getApprovedContacts();
+
+    for (const contact of contacts) {
+      const cleanUsername = contact.username.toLowerCase().replace(/^@/, '');
+      const cleanId = contact.id.toLowerCase().replace(/^contact-/, '');
+
+      const matched = dialogs.find((d) => {
+        const entity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
+        const dUser = entity?.username?.toLowerCase();
+        const dId = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
+        return (dUser && dUser === cleanUsername) || (dId && (dId === cleanId || dId === contact.id));
+      });
+
+      if (matched) {
+        const count = matched.unreadCount || 0;
+        if (count > 0) {
+          updateContactStatus(contact.id, 'new_message', count);
+        } else {
+          updateContactStatus(contact.id, 'no_new_message', 0);
+        }
+      } else {
+        // Contact has no active unread dialog in Telegram
+        updateContactStatus(contact.id, 'no_new_message', 0);
+      }
+    }
+  } catch (err) {
+    console.warn('Real telegram unread status sync notice:', err);
+  }
 }
