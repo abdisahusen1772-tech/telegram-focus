@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw, Paperclip, Image as ImageIcon, Download } from 'lucide-react';
 import { ApprovedContact, Message } from '@/lib/types';
 
 interface ConversationViewProps {
@@ -14,11 +14,37 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<{
+    type: 'image' | 'document';
+    name: string;
+    size?: string;
+    url: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith('image/');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setSelectedMedia({
+        type: isImage ? 'image' : 'document',
+        name: file.name,
+        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+        url: result,
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const fetchConversation = async (isManual = false) => {
     if (isManual) setRefreshing(true);
@@ -49,7 +75,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = inputText.trim();
-    if (!text || sending) return;
+    if ((!text && !selectedMedia) || sending) return;
 
     setSending(true);
     try {
@@ -59,6 +85,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
         body: JSON.stringify({
           peerId: contact.id,
           text,
+          media: selectedMedia || undefined,
           replyToId: replyTo?.id,
           replyToSnippet: replyTo ? `${replyTo.senderName}: ${replyTo.text.slice(0, 45)}...` : undefined,
         }),
@@ -67,6 +94,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
       const data = await res.json();
       if (data.success) {
         setInputText('');
+        setSelectedMedia(null);
         setReplyTo(null);
         setMessages((prev) => [...prev, data.message]);
         if (onMessageSent) onMessageSent();
@@ -179,9 +207,25 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
                       : 'bg-white text-stone-900 border border-stone-200/90'
                   }`}
                 >
+                  {/* Media: Image */}
+                  {msg.media?.type === 'image' && (
+                    <div className="mb-2 overflow-hidden rounded-lg border border-stone-200/60 max-w-sm">
+                      <img
+                        src={msg.media.url}
+                        alt={msg.media.name || 'Shared image'}
+                        className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition"
+                        onClick={() => window.open(msg.media?.url, '_blank')}
+                      />
+                    </div>
+                  )}
+
                   {/* Media: Document */}
                   {msg.media?.type === 'document' && (
-                    <div className="mb-2 p-2.5 bg-stone-100/80 rounded-lg border border-stone-200 text-stone-800 flex items-center space-x-2.5">
+                    <a
+                      href={msg.media.url}
+                      download={msg.media.name || 'document'}
+                      className="mb-2 p-2.5 bg-stone-100/90 hover:bg-stone-200/80 rounded-lg border border-stone-200 text-stone-800 flex items-center space-x-2.5 transition"
+                    >
                       <FileText className="w-5 h-5 text-stone-600 shrink-0" />
                       <div className="overflow-hidden flex-1">
                         <p className="font-mono text-[11px] truncate font-medium">
@@ -191,7 +235,8 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
                           <p className="text-[10px] text-stone-500 font-mono">{msg.media.size}</p>
                         )}
                       </div>
-                    </div>
+                      <Download className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                    </a>
                   )}
 
                   {/* Media: Voice message */}
@@ -225,7 +270,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
                   )}
 
                   {/* Message Text */}
-                  <p className="whitespace-pre-wrap">{msg.text}</p>
+                  {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
 
                   {/* Message meta */}
                   <div
@@ -272,11 +317,53 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
         </div>
       )}
 
+      {/* Attachment Preview Chip */}
+      {selectedMedia && (
+        <div className="px-4 py-2 bg-stone-100/95 border-t border-stone-200 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2 overflow-hidden">
+            {selectedMedia.type === 'image' ? (
+              <ImageIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+            )}
+            <div className="truncate">
+              <span className="font-semibold text-stone-800">{selectedMedia.name} </span>
+              <span className="text-stone-500 font-mono text-[10px]">({selectedMedia.size})</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedMedia(null)}
+            className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
+            title="Remove attachment"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Message Input Box (Deliberate & Distraction-Free) */}
       <form
         onSubmit={handleSendMessage}
         className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-2 shrink-0"
       >
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          accept="image/*,.pdf,.doc,.docx,.txt,.zip"
+          className="hidden"
+        />
+
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+          title="Attach image or file"
+        >
+          <Paperclip className="w-4 h-4 stroke-[2]" />
+        </button>
+
         <input
           type="text"
           value={inputText}
@@ -287,7 +374,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
 
         <button
           type="submit"
-          disabled={!inputText.trim() || sending}
+          disabled={(!inputText.trim() && !selectedMedia) || sending}
           className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-lg transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
           title="Send message"
         >

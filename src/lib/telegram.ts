@@ -408,13 +408,37 @@ export async function verifyTelegramUsername(rawUsername: string): Promise<{
 /**
  * Send message to an approved contact
  */
-export async function sendTelegramMessage(peerUsername: string, text: string): Promise<boolean> {
+export async function sendTelegramMessage(
+  peerUsername: string,
+  text: string,
+  media?: { type: 'image' | 'video' | 'voice' | 'document'; url: string; name?: string }
+): Promise<boolean> {
   const client = await getOrInitTelegramClient();
   if (client && client.connected) {
     try {
       const cleanUsername = peerUsername.replace(/^@/, '').trim();
       const entity = await client.getEntity(cleanUsername);
-      await client.sendMessage(entity, { message: text });
+
+      if (media && media.url && media.url.startsWith('data:')) {
+        try {
+          const matches = media.url.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+          if (matches && matches[2]) {
+            const buffer = Buffer.from(matches[2], 'base64');
+            await client.sendFile(entity, {
+              file: buffer,
+              caption: text || (media.name ? `📎 ${media.name}` : undefined),
+              workers: 1,
+            });
+            return true;
+          }
+        } catch (mediaErr) {
+          console.warn('Failed to send raw media file via Telegram, falling back to message text:', mediaErr);
+        }
+      }
+
+      await client.sendMessage(entity, {
+        message: text + (media?.name ? `\n[Attached: ${media.name}]` : ''),
+      });
       return true;
     } catch (err) {
       console.error('Failed to send Telegram message:', err);
@@ -471,4 +495,91 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
     console.warn('Real telegram message fetch notice:', err);
     return [];
   }
+}
+
+export interface TelegramJoinedDialog {
+  id: string;
+  title: string;
+  username?: string;
+  isGroup: boolean;
+  isChannel: boolean;
+  isPrivate: boolean;
+  unreadCount: number;
+}
+
+/**
+ * Retrieve user's joined Telegram dialogs (groups and channels) to allow selectively adding private channels/groups
+ */
+export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
+  const client = await getOrInitTelegramClient();
+  if (client && client.connected) {
+    try {
+      const dialogs = await client.getDialogs({ limit: 60 });
+      const results: TelegramJoinedDialog[] = [];
+
+      for (const d of dialogs) {
+        const isChannel = Boolean(d.isChannel);
+        const isGroup = Boolean(d.isGroup);
+
+        if (!isChannel && !isGroup) continue;
+
+        const entity = d.entity as unknown as {
+          id?: { toString: () => string };
+          title?: string;
+          username?: string;
+          megagroup?: boolean;
+          broadcast?: boolean;
+        };
+
+        const idStr = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
+        if (!idStr) continue;
+
+        const title = d.title || entity?.title || 'Private Group';
+        const username = entity?.username || undefined;
+        const isPrivate = !username;
+
+        results.push({
+          id: idStr,
+          title,
+          username,
+          isGroup: isGroup || Boolean(entity?.megagroup),
+          isChannel: isChannel && !entity?.megagroup,
+          isPrivate,
+          unreadCount: d.unreadCount || 0,
+        });
+      }
+
+      return results;
+    } catch (err) {
+      console.warn('Telegram getDialogs notice:', err);
+    }
+  }
+
+  // Simulated private groups/channels for sandbox / offline mode
+  return [
+    {
+      id: '-100987654321',
+      title: '📚 SAT & CS Study Group',
+      isGroup: true,
+      isChannel: false,
+      isPrivate: true,
+      unreadCount: 1,
+    },
+    {
+      id: '-100876543210',
+      title: '🏠 Private Family Circle',
+      isGroup: true,
+      isChannel: false,
+      isPrivate: true,
+      unreadCount: 0,
+    },
+    {
+      id: '-100765432109',
+      title: '🔒 Research Dispatch (Private Channel)',
+      isGroup: false,
+      isChannel: true,
+      isPrivate: true,
+      unreadCount: 2,
+    },
+  ];
 }

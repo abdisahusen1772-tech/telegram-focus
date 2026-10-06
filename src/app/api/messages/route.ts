@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPeerMessages, addMessageToPeer, markPeerAsRead, getUserSession, getApprovedContacts } from '@/lib/db';
+import { getPeerMessages, addMessageToPeer, markPeerAsRead, getUserSession, getApprovedContacts, getApprovedChannels } from '@/lib/db';
 import { sendTelegramMessage, syncMessagesFromTelegram } from '@/lib/telegram';
 import { Message } from '@/lib/types';
 
@@ -82,11 +82,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { peerId, text, replyToId, replyToSnippet } = body;
+    const { peerId, text, replyToId, replyToSnippet, media } = body;
 
-    if (!peerId || !text || typeof text !== 'string' || text.trim() === '') {
+    const hasText = Boolean(text && typeof text === 'string' && text.trim() !== '');
+    const hasMedia = Boolean(media && typeof media === 'object' && media.url);
+
+    if (!peerId || (!hasText && !hasMedia)) {
       return NextResponse.json(
-        { success: false, error: 'peerId and non-empty text are required' },
+        { success: false, error: 'peerId and either text or media attachment are required' },
         { status: 400 }
       );
     }
@@ -94,6 +97,8 @@ export async function POST(req: NextRequest) {
     const session = getUserSession();
     const contacts = getApprovedContacts();
     const targetContact = contacts.find(c => c.id === peerId);
+    const channels = getApprovedChannels();
+    const targetChannel = channels.find(ch => ch.id === peerId);
 
     const newMessage: Message = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -101,17 +106,19 @@ export async function POST(req: NextRequest) {
       senderId: session?.userId || 'user-self',
       senderName: session?.firstName || 'You',
       isOutgoing: true,
-      text: text.trim(),
+      text: (text || '').trim(),
       date: new Date().toISOString(),
+      media: hasMedia ? media : undefined,
       replyToId,
       replyToSnippet,
     };
 
     const saved = addMessageToPeer(newMessage);
 
-    // If connected to real Telegram and targeting a contact with username
-    if (session && !session.isDemoMode && targetContact) {
-      await sendTelegramMessage(targetContact.username, text.trim());
+    // If connected to real Telegram, dispatch to recipient contact or group
+    const targetIdentifier = targetContact?.username || targetChannel?.username;
+    if (session && !session.isDemoMode && targetIdentifier) {
+      await sendTelegramMessage(targetIdentifier, (text || '').trim(), hasMedia ? media : undefined);
     }
 
     return NextResponse.json({

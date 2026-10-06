@@ -35,6 +35,8 @@ export interface ApprovedChannel {
   addedAt: string;
   lastPostAt: string;
   hasNewPost: boolean;
+  isGroup?: boolean;
+  isPrivate?: boolean;
 }
 
 export interface MessageMedia {

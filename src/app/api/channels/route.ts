@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getApprovedChannels, addApprovedChannel, removeApprovedChannel, updateChannelNotifications } from '@/lib/db';
 import { verifyTelegramUsername } from '@/lib/telegram';
+import { ApprovedChannel } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,11 +25,35 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { username } = body;
+    const { username, id, title, isGroup, isPrivate } = body;
+
+    // Direct addition of private joined channel or group from user's Telegram
+    if (id && title) {
+      const cleanId = String(id).replace(/^-100/, '').replace(/^-/, '');
+      const newChannel: ApprovedChannel = {
+        id: `channel-${cleanId}`,
+        username: username || `private_${cleanId}`,
+        title: isGroup ? `👥 ${title}` : `🔒 ${title}`,
+        about: isGroup ? 'Private Telegram Group' : 'Private Telegram Channel',
+        notificationsEnabled: true,
+        addedAt: new Date().toISOString(),
+        lastPostAt: new Date().toISOString(),
+        hasNewPost: false,
+        isGroup: Boolean(isGroup),
+        isPrivate: true,
+      };
+
+      const saved = addApprovedChannel(newChannel);
+      return NextResponse.json({
+        success: true,
+        channel: saved,
+        message: `Added private ${isGroup ? 'group' : 'channel'} "${title}" to Allowed list`,
+      });
+    }
 
     if (!username || typeof username !== 'string') {
       return NextResponse.json(
-        { success: false, error: 'Telegram channel username is required (e.g. @examplechannel)' },
+        { success: false, error: 'Telegram channel username or private group details required' },
         { status: 400 }
       );
     }

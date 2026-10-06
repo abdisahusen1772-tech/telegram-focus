@@ -71,14 +71,14 @@ export function HomeScreen({
           <div className="flex items-center justify-between border-b border-stone-300 pb-2 mb-2">
             <div className="flex items-center space-x-1.5">
               <span className="text-[11px] font-mono tracking-widest uppercase text-stone-600 font-semibold">
-                Channels
+                Channels & Groups
               </span>
               <span className="text-[10px] font-mono text-stone-400">({channels.length})</span>
             </div>
             <button
               onClick={() => onOpenAddModal('channel')}
               className="text-[11px] font-mono text-stone-500 hover:text-stone-950 flex items-center space-x-1 px-1.5 py-0.5 rounded hover:bg-stone-100 transition cursor-pointer"
-              title="Add approved channel by @username"
+              title="Add approved channel or private group"
             >
               <Plus className="w-3 h-3 stroke-[2.5]" />
               <span>Add</span>
@@ -89,13 +89,13 @@ export function HomeScreen({
             {channels.length === 0 ? (
               <div className="py-6 text-center border border-dashed border-stone-200 rounded-lg">
                 <p className="text-xs text-stone-400 font-mono">
-                  No approved channels.
+                  No approved channels or groups.
                 </p>
                 <button
                   onClick={() => onOpenAddModal('channel')}
                   className="mt-1.5 text-xs text-stone-700 underline font-mono hover:text-stone-950 cursor-pointer"
                 >
-                  + Add by @username
+                  + Add from Telegram
                 </button>
               </div>
             ) : (
@@ -109,6 +109,11 @@ export function HomeScreen({
                     <span className="text-sm font-normal text-stone-900 tracking-tight group-hover:translate-x-0.5 transition-transform duration-150">
                       {channel.title}
                     </span>
+                    {channel.isPrivate && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-stone-100 text-stone-500 border border-stone-200">
+                        {channel.isGroup ? 'Group' : 'Private'}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center space-x-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>

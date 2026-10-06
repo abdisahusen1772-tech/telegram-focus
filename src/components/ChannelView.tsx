@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock } from 'lucide-react';
 import { ApprovedChannel, Message } from '@/lib/types';
 
 interface ChannelViewProps {
@@ -12,20 +12,49 @@ interface ChannelViewProps {
 
 export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelViewProps) {
   const [posts, setPosts] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [sending, setSending] = useState(false);
   const [notificationsOn, setNotificationsOn] = useState(channel.notificationsEnabled);
   const [loading, setLoading] = useState(true);
 
   const fetchChannelPosts = async () => {
     try {
-      const res = await fetch(`/api/messages?peerId=${channel.id}`);
+      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(channel.id)}`);
       const data = await res.json();
-      if (data.success) {
+      if (data.success && Array.isArray(data.messages)) {
         setPosts(data.messages);
       }
     } catch (e) {
       console.error('Error fetching channel posts:', e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = inputText.trim();
+    if (!text || sending) return;
+
+    setSending(true);
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          peerId: channel.id,
+          text,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInputText('');
+        setPosts((prev) => [...prev, data.message]);
+      }
+    } catch (err) {
+      console.error('Failed to send group message:', err);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -162,6 +191,31 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
           ))
         )}
       </div>
+
+      {/* Group Message Composer if this is a group chat */}
+      {channel.isGroup && (
+        <form
+          onSubmit={handleSendMessage}
+          className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-2 shrink-0"
+        >
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={`Message ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`}
+            className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
+          />
+
+          <button
+            type="submit"
+            disabled={!inputText.trim() || sending}
+            className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-lg transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
+            title="Send to group"
+          >
+            <Send className="w-4 h-4 stroke-[2]" />
+          </button>
+        </form>
+      )}
     </div>
   );
 }
