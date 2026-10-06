@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw } from 'lucide-react';
 import { ApprovedContact, Message } from '@/lib/types';
 
 interface ConversationViewProps {
@@ -15,27 +15,30 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
   const [inputText, setInputText] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchConversation = async () => {
+  const fetchConversation = async (isManual = false) => {
+    if (isManual) setRefreshing(true);
     try {
-      const res = await fetch(`/api/messages?peerId=${contact.id}`);
+      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(contact.id)}`);
       const data = await res.json();
-      if (data.success) {
+      if (data.success && Array.isArray(data.messages)) {
         setMessages(data.messages);
       }
     } catch (e) {
       console.error('Error fetching messages:', e);
     } finally {
       setLoading(false);
+      if (isManual) setRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchConversation();
-    const interval = setInterval(fetchConversation, 3500);
+    const interval = setInterval(() => fetchConversation(false), 8000);
     return () => clearInterval(interval);
   }, [contact.id]);
 
@@ -78,7 +81,12 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
   const formatTime = (isoString: string) => {
     try {
       const date = new Date(isoString);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const today = new Date();
+      const isToday = date.toDateString() === today.toDateString();
+      if (isToday) {
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })} · ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     } catch {
       return '';
     }
@@ -111,8 +119,16 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
           </div>
         </div>
 
-        <div className="text-right">
-          <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200">
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => fetchConversation(true)}
+            disabled={refreshing}
+            className="p-1.5 text-stone-400 hover:text-stone-700 rounded-md hover:bg-stone-100 transition cursor-pointer"
+            title="Sync latest messages"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-700' : ''}`} />
+          </button>
+          <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200 hidden sm:inline-block">
             Encrypted Session
           </span>
         </div>

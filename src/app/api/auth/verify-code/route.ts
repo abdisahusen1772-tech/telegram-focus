@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signInWithTelegramCode } from '@/lib/telegram';
+import { getUserSession } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,11 +35,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const session = getUserSession();
+    const response = NextResponse.json({
       success: true,
       user: result.user,
       message: 'Successfully connected Telegram account',
     });
+
+    if (session) {
+      try {
+        const sessionB64 = Buffer.from(JSON.stringify(session)).toString('base64');
+        response.cookies.set('tg_focus_session', sessionB64, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 60 * 60 * 24 * 365,
+          path: '/',
+        });
+      } catch (e) {
+        console.warn('Cookie set error:', e);
+      }
+    }
+
+    return response;
   } catch (error) {
     console.error('Error in verify-code route:', error);
     return NextResponse.json(

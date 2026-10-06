@@ -20,17 +20,36 @@ export async function GET(req: NextRequest) {
 
     const session = getUserSession();
     const contacts = getApprovedContacts();
-    const targetContact = contacts.find(c => c.id === peerId);
+    const cleanId = peerId.toLowerCase().replace(/^@/, '');
+    const targetContact = contacts.find(c =>
+      c.id === peerId ||
+      c.username.toLowerCase() === cleanId ||
+      c.id.toLowerCase() === `contact-${cleanId}`
+    );
 
-    // If connected to real Telegram account, sync latest live messages
+    // 1. Immediately retrieve locally cached messages for instant rendering
+    let messages = getPeerMessages(peerId);
+
+    // 2. If connected to real Telegram, attempt live sync with 1.2s timeout
+    // This ensures fast response on Vercel without blocking or timing out
     if (session && !session.isDemoMode && targetContact) {
-      await syncMessagesFromTelegram(peerId, targetContact.username);
+      try {
+        const syncPromise = syncMessagesFromTelegram(targetContact.id, targetContact.username);
+        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 1200));
+        await Promise.race([syncPromise, timeoutPromise]);
+        // Refresh messages in case new ones were saved
+        messages = getPeerMessages(peerId);
+      } catch (syncErr) {
+        console.warn('Real-time Telegram sync warning (continuing with cached messages):', syncErr);
+      }
     }
 
-    const messages = getPeerMessages(peerId);
-
     // Intentionally opening conversation resets unread notification status
-    markPeerAsRead(peerId);
+    try {
+      markPeerAsRead(peerId);
+    } catch (readErr) {
+      console.warn('markPeerAsRead notice:', readErr);
+    }
 
     return NextResponse.json({
       success: true,
@@ -39,6 +58,20 @@ export async function GET(req: NextRequest) {
     });
   } catch (error) {
     console.error('Error fetching messages:', error);
+    try {
+      const { searchParams } = new URL(req.url);
+      const peerId = searchParams.get('peerId');
+      if (peerId) {
+        const fallbackMessages = getPeerMessages(peerId);
+        return NextResponse.json({
+          success: true,
+          peerId,
+          messages: fallbackMessages,
+        });
+      }
+    } catch {
+      // ignore
+    }
     return NextResponse.json(
       { success: false, error: 'Failed to retrieve messages' },
       { status: 500 }

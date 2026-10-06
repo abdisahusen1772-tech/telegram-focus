@@ -30,19 +30,34 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
   const existingSession = getUserSession();
   const sessionString = customSessionString || existingSession?.sessionString || '';
 
+  if (!sessionString) {
+    return null;
+  }
+
   if (activeClient && activeClient.connected) {
     return activeClient;
   }
 
-  const stringSession = new StringSession(sessionString);
-  const client = new TelegramClient(stringSession, apiId, apiHash, {
-    connectionRetries: 3,
-    useWSS: false,
-  });
+  try {
+    const stringSession = new StringSession(sessionString);
+    const client = new TelegramClient(stringSession, apiId, apiHash, {
+      connectionRetries: 2,
+      timeout: 5,
+      useWSS: false,
+    });
 
-  await client.connect();
-  activeClient = client;
-  return client;
+    const connectPromise = client.connect();
+    const timeoutPromise = new Promise<void>((_, reject) =>
+      setTimeout(() => reject(new Error('MTProto connection timeout')), 4500)
+    );
+
+    await Promise.race([connectPromise, timeoutPromise]);
+    activeClient = client;
+    return client;
+  } catch (err) {
+    console.warn('Could not establish Telegram MTProto client connection:', err);
+    return null;
+  }
 }
 
 /**

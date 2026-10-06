@@ -7,10 +7,12 @@ export const dynamic = 'force-dynamic';
 export async function POST() {
   try {
     setUserSession(null);
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: 'Telegram account disconnected securely',
     });
+    response.cookies.delete('tg_focus_session');
+    return response;
   } catch (error) {
     console.error('Error during logout:', error);
     return NextResponse.json(

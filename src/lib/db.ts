@@ -1,9 +1,27 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { DatabaseSchema, UserSession, ApprovedContact, ApprovedChannel, Message, AppSettings } from './types';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+// Bundled DB file in git repository (read-only in Vercel/serverless lambdas)
+const BUNDLED_DB_FILE = path.join(process.cwd(), 'data', 'focus_db.json');
+
+// Detect serverless environment (Vercel, AWS Lambda, etc.)
+const isServerless = Boolean(
+  process.env.VERCEL ||
+  process.env.AWS_LAMBDA_FUNCTION_NAME ||
+  process.env.LAMBDA_TASK_ROOT
+);
+
+// In serverless, only os.tmpdir() (/tmp) is writable. In local development, use project's data directory.
+const DATA_DIR = isServerless
+  ? path.join(os.tmpdir(), 'telegram-focus')
+  : path.join(process.cwd(), 'data');
+
 const DB_FILE = path.join(DATA_DIR, 'focus_db.json');
+
+// In-memory database cache for instant access and serverless safety
+let inMemoryDb: DatabaseSchema | null = null;
 
 const DEFAULT_SETTINGS: AppSettings = {
   focusMode: true,
@@ -210,58 +228,113 @@ const DEFAULT_MESSAGES: Message[] = [
 ];
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('ensureDataDir notice:', err);
   }
 }
 
 export function getDb(): DatabaseSchema {
+  if (inMemoryDb) {
+    return inMemoryDb;
+  }
+
   ensureDataDir();
+
+  // If the writable DB file doesn't exist yet, seed from bundled file or default schema
   if (!fs.existsSync(DB_FILE)) {
-    const initialDb: DatabaseSchema = {
-      session: {
-        userId: 'demo-user-12345',
-        firstName: 'Distraction-Free',
-        lastName: 'User',
-        username: 'focus_user',
-        phone: '+1 (555) 019-2834',
-        sessionString: 'demo_session_active',
-        isConnected: true,
-        isDemoMode: true,
-        connectedAt: new Date().toISOString(),
-        lastSyncedAt: new Date().toISOString(),
-      },
-      contacts: DEFAULT_CONTACTS,
-      channels: DEFAULT_CHANNELS,
-      messages: DEFAULT_MESSAGES,
-      settings: DEFAULT_SETTINGS,
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), 'utf-8');
+    let initialDb: DatabaseSchema | null = null;
+
+    // First attempt to load bundled repo DB file
+    if (fs.existsSync(BUNDLED_DB_FILE)) {
+      try {
+        const rawBundled = fs.readFileSync(BUNDLED_DB_FILE, 'utf-8');
+        initialDb = JSON.parse(rawBundled) as DatabaseSchema;
+      } catch (err) {
+        console.warn('Error reading bundled database file:', err);
+      }
+    }
+
+    if (!initialDb) {
+      initialDb = {
+        session: {
+          userId: 'demo-user-12345',
+          firstName: 'Distraction-Free',
+          lastName: 'User',
+          username: 'focus_user',
+          phone: '+1 (555) 019-2834',
+          sessionString: 'demo_session_active',
+          isConnected: true,
+          isDemoMode: true,
+          connectedAt: new Date().toISOString(),
+          lastSyncedAt: new Date().toISOString(),
+        },
+        contacts: DEFAULT_CONTACTS,
+        channels: DEFAULT_CHANNELS,
+        messages: DEFAULT_MESSAGES,
+        settings: DEFAULT_SETTINGS,
+      };
+    }
+
+    inMemoryDb = initialDb;
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), 'utf-8');
+    } catch (writeErr) {
+      console.warn('Could not persist initial DB file to disk (relying on memory):', writeErr);
+    }
     return initialDb;
   }
 
   try {
     const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    return JSON.parse(raw) as DatabaseSchema;
+    inMemoryDb = JSON.parse(raw) as DatabaseSchema;
+    return inMemoryDb;
   } catch {
-    // If corrupt, recreate defaults
-    const initialDb: DatabaseSchema = {
-      session: null,
-      contacts: DEFAULT_CONTACTS,
-      channels: DEFAULT_CHANNELS,
-      messages: DEFAULT_MESSAGES,
-      settings: DEFAULT_SETTINGS,
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2), 'utf-8');
-    return initialDb;
+    // If corrupt, fallback to bundled file or defaults
+    let fallbackDb: DatabaseSchema | null = null;
+    if (fs.existsSync(BUNDLED_DB_FILE)) {
+      try {
+        const rawBundled = fs.readFileSync(BUNDLED_DB_FILE, 'utf-8');
+        fallbackDb = JSON.parse(rawBundled) as DatabaseSchema;
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!fallbackDb) {
+      fallbackDb = {
+        session: null,
+        contacts: DEFAULT_CONTACTS,
+        channels: DEFAULT_CHANNELS,
+        messages: DEFAULT_MESSAGES,
+        settings: DEFAULT_SETTINGS,
+      };
+    }
+
+    inMemoryDb = fallbackDb;
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(fallbackDb, null, 2), 'utf-8');
+    } catch {
+      // ignore
+    }
+    return fallbackDb;
   }
 }
 
 export function saveDb(data: DatabaseSchema): void {
+  inMemoryDb = data;
   ensureDataDir();
-  const tempFile = `${DB_FILE}.tmp.${Date.now()}`;
-  fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tempFile, DB_FILE);
+  try {
+    const tempFile = `${DB_FILE}.tmp.${Date.now()}`;
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempFile, DB_FILE);
+  } catch (err: unknown) {
+    // If disk write fails (e.g. read-only filesystem), do NOT crash the request
+    console.warn('saveDb disk write warning (in-memory state preserved):', err instanceof Error ? err.message : String(err));
+  }
 }
 
 // Session Helpers
@@ -359,8 +432,26 @@ export function updateChannelNotifications(id: string, enabled: boolean): void {
 // Messages Helpers
 export function getPeerMessages(peerId: string): Message[] {
   const db = getDb();
+  const cleanId = peerId.toLowerCase().replace(/^@/, '');
+  const matchedContact = db.contacts.find(c =>
+    c.id.toLowerCase() === cleanId ||
+    c.username.toLowerCase() === cleanId ||
+    c.id.toLowerCase() === `contact-${cleanId}`
+  );
+  const matchedChannel = db.channels.find(ch =>
+    ch.id.toLowerCase() === cleanId ||
+    ch.username.toLowerCase() === cleanId ||
+    ch.id.toLowerCase() === `channel-${cleanId}`
+  );
+  const targetId = matchedContact?.id || matchedChannel?.id || peerId;
+
   return db.messages
-    .filter(m => m.peerId === peerId)
+    .filter(m =>
+      m.peerId === targetId ||
+      m.peerId === peerId ||
+      (matchedContact && (m.peerId === matchedContact.username || m.peerId === `@${matchedContact.username}`)) ||
+      (matchedChannel && (m.peerId === matchedChannel.username || m.peerId === `@${matchedChannel.username}`))
+    )
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
@@ -390,12 +481,13 @@ export function addMessageToPeer(message: Message): Message {
 
 export function markPeerAsRead(peerId: string): void {
   const db = getDb();
-  const contact = db.contacts.find(c => c.id === peerId);
+  const cleanId = peerId.toLowerCase().replace(/^@/, '');
+  const contact = db.contacts.find(c => c.id === peerId || c.username.toLowerCase() === cleanId || c.id.toLowerCase() === `contact-${cleanId}`);
   if (contact) {
     contact.status = 'no_new_message';
     contact.unreadCount = 0;
   }
-  const channel = db.channels.find(c => c.id === peerId);
+  const channel = db.channels.find(c => c.id === peerId || c.username.toLowerCase() === cleanId || c.id.toLowerCase() === `channel-${cleanId}`);
   if (channel) {
     channel.hasNewPost = false;
   }
