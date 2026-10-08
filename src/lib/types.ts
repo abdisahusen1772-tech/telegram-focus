@@ -23,6 +23,7 @@ export interface ApprovedContact {
   notificationsEnabled: boolean;
   addedAt: string;
   lastMessageAt: string;
+  isPinned?: boolean;
 }
 
 export interface ApprovedChannel {
@@ -37,6 +38,7 @@ export interface ApprovedChannel {
   hasNewPost: boolean;
   isGroup?: boolean;
   isPrivate?: boolean;
+  isPinned?: boolean;
 }
 
 export interface MessageMedia {

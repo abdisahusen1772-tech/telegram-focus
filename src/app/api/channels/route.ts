@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApprovedChannels, addApprovedChannel, removeApprovedChannel, updateChannelNotifications } from '@/lib/db';
+import { getApprovedChannels, addApprovedChannel, removeApprovedChannel, updateChannelNotifications, togglePinChannel } from '@/lib/db';
 import { verifyTelegramUsername } from '@/lib/telegram';
 import { ApprovedChannel } from '@/lib/types';
 
@@ -97,11 +97,27 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, notificationsEnabled } = body;
+    const { id, notificationsEnabled, action } = body;
 
-    if (!id || typeof notificationsEnabled !== 'boolean') {
+    if (!id) {
       return NextResponse.json(
-        { success: false, error: 'Channel ID and notificationsEnabled boolean required' },
+        { success: false, error: 'Channel ID is required' },
+        { status: 400 }
+      );
+    }
+
+    if (action === 'toggle_pin') {
+      const isPinned = togglePinChannel(id);
+      return NextResponse.json({
+        success: true,
+        isPinned,
+        message: `Channel ${isPinned ? 'pinned to top' : 'unpinned'}`,
+      });
+    }
+
+    if (typeof notificationsEnabled !== 'boolean') {
+      return NextResponse.json(
+        { success: false, error: 'notificationsEnabled boolean or action required' },
         { status: 400 }
       );
     }

@@ -46,10 +46,18 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
     e.target.value = '';
   };
 
+  const getAuthHeaders = (): Record<string, string> => {
+    if (typeof window === 'undefined') return {};
+    const token = localStorage.getItem('tg_focus_session');
+    return token ? { 'x-telegram-session': token } : {};
+  };
+
   const fetchConversation = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(contact.id)}`);
+      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(contact.id)}`, {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.success && Array.isArray(data.messages)) {
         setMessages(data.messages);
@@ -64,7 +72,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
 
   useEffect(() => {
     fetchConversation();
-    const interval = setInterval(() => fetchConversation(false), 8000);
+    const interval = setInterval(() => fetchConversation(false), 4000);
     return () => clearInterval(interval);
   }, [contact.id]);
 
@@ -81,7 +89,10 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
     try {
       const res = await fetch('/api/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({
           peerId: contact.id,
           text,

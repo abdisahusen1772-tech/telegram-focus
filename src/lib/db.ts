@@ -389,6 +389,17 @@ export function updateContactStatus(id: string, status: 'new_message' | 'no_new_
   }
 }
 
+export function togglePinContact(id: string): boolean {
+  const db = getDb();
+  const contact = db.contacts.find(c => c.id === id || c.username === id);
+  if (contact) {
+    contact.isPinned = !contact.isPinned;
+    saveDb(db);
+    return Boolean(contact.isPinned);
+  }
+  return false;
+}
+
 // Channels Helpers
 export function getApprovedChannels(): ApprovedChannel[] {
   const db = getDb();
@@ -427,6 +438,17 @@ export function updateChannelNotifications(id: string, enabled: boolean): void {
   }
   db.settings.channelNotifications[id] = enabled;
   saveDb(db);
+}
+
+export function togglePinChannel(id: string): boolean {
+  const db = getDb();
+  const channel = db.channels.find(c => c.id === id || c.username === id);
+  if (channel) {
+    channel.isPinned = !channel.isPinned;
+    saveDb(db);
+    return Boolean(channel.isPinned);
+  }
+  return false;
 }
 
 // Messages Helpers

@@ -1,14 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getMyTelegramDialogs } from '@/lib/telegram';
-import { getApprovedChannels, getUserSession } from '@/lib/db';
+import { getApprovedChannels } from '@/lib/db';
+import { resolveSession } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const session = getUserSession();
+    const session = resolveSession(req);
     if (!session || !session.isConnected || !session.sessionString) {
       return NextResponse.json({
         success: true,
@@ -18,7 +19,7 @@ export async function GET() {
       });
     }
 
-    const dialogs = await getMyTelegramDialogs();
+    const dialogs = await getMyTelegramDialogs(session.sessionString);
     const approvedChannels = getApprovedChannels();
     const approvedIds = new Set(
       approvedChannels.map((c) =>

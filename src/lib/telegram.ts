@@ -476,18 +476,35 @@ export async function sendTelegramMessage(
 /**
  * Fetch live messages from real Telegram account for an approved contact or channel
  */
-export async function syncMessagesFromTelegram(peerId: string, peerUsername: string): Promise<Message[]> {
-  const client = await getOrInitTelegramClient();
+export async function syncMessagesFromTelegram(peerId: string, peerUsername: string, customSessionString?: string): Promise<Message[]> {
+  const client = await getOrInitTelegramClient(customSessionString);
   if (!client || !client.connected) {
     return [];
   }
 
   try {
     const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim() : '';
+    const rawId = peerId.replace(/^contact-/, '').replace(/^channel-/, '');
     let entity: unknown = null;
 
-    // Try resolving entity by username first if valid
-    if (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+    // Search dialogs first because dialogs contain pre-resolved InputEntity with valid accessHash!
+    const dialogs = await client.getDialogs({ limit: 120 });
+    const matched = dialogs.find((d) => {
+      const dId = d.id ? d.id.toString() : '';
+      const dEntity = d.entity as { username?: string } | undefined;
+      return (
+        dId === rawId ||
+        dId === peerId ||
+        (cleanUsername && !cleanUsername.startsWith('user_') && dEntity?.username?.toLowerCase() === cleanUsername.toLowerCase())
+      );
+    });
+
+    if (matched) {
+      entity = matched.inputEntity || matched.entity;
+    }
+
+    // Fallback: try resolving by username
+    if (!entity && cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
       try {
         entity = await client.getEntity(cleanUsername);
       } catch {
@@ -495,34 +512,12 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       }
     }
 
-    // Fallback to resolving by numerical ID
+    // Fallback: try resolving by numerical ID
     if (!entity) {
-      const rawId = peerId.replace(/^contact-/, '').replace(/^channel-/, '');
       try {
-        const numId = parseInt(rawId, 10);
-        if (!isNaN(numId)) {
-          entity = await client.getEntity(numId);
-        }
+        entity = await client.getEntity(rawId);
       } catch {
         // ignore
-      }
-    }
-
-    if (!entity) {
-      // Search dialogs to find matching entity
-      const dialogs = await client.getDialogs({ limit: 100 });
-      const rawId = peerId.replace(/^contact-/, '').replace(/^channel-/, '');
-      const matched = dialogs.find((d) => {
-        const dId = d.id ? d.id.toString() : '';
-        const dEntity = d.entity as { username?: string } | undefined;
-        return (
-          dId === rawId ||
-          dId === peerId ||
-          (cleanUsername && dEntity?.username?.toLowerCase() === cleanUsername.toLowerCase())
-        );
-      });
-      if (matched) {
-        entity = matched.entity;
       }
     }
 
@@ -531,19 +526,30 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       return [];
     }
 
-    const tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], { limit: 35 });
+    const tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], { limit: 50 });
     const me = (await client.getMe()) as unknown as { id: { toString: () => string }; firstName?: string };
     const myId = me?.id ? me.id.toString() : 'me';
 
     const synced: Message[] = [];
     for (const msg of tgMessages) {
       const textContent = (msg as unknown as { message?: string }).message || '';
-      if (!textContent && !(msg as unknown as { media?: unknown }).media) continue;
+      const mediaObj = (msg as unknown as { media?: { className?: string } }).media;
+      if (!textContent && !mediaObj) continue;
 
       const isOut = Boolean((msg as unknown as { out?: boolean }).out);
       const unixDate = (msg as unknown as { date: number }).date;
       const mDate = unixDate ? new Date(unixDate * 1000).toISOString() : new Date().toISOString();
       const msgId = (msg as unknown as { id: number }).id;
+
+      let parsedMedia = undefined;
+      if (mediaObj) {
+        const isPhoto = mediaObj.className === 'MessageMediaPhoto';
+        parsedMedia = {
+          type: isPhoto ? ('image' as const) : ('document' as const),
+          name: isPhoto ? 'Photo' : 'Document attachment',
+          url: '#',
+        };
+      }
 
       const newMsg: Message = {
         id: `tg-${peerId}-${msgId}`,
@@ -551,8 +557,9 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
         senderId: isOut ? myId : peerId,
         senderName: isOut ? 'You' : (cleanUsername || 'Contact'),
         isOutgoing: isOut,
-        text: textContent || '📎 [Media Attachment]',
+        text: textContent || (parsedMedia ? `📎 [${parsedMedia.name}]` : ''),
         date: mDate,
+        media: parsedMedia,
       };
       synced.push(newMsg);
     }
@@ -581,8 +588,8 @@ export interface TelegramJoinedDialog {
 /**
  * Retrieve user's joined Telegram dialogs (groups and channels) to allow selectively adding private channels/groups
  */
-export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
-  const client = await getOrInitTelegramClient();
+export async function getMyTelegramDialogs(customSessionString?: string): Promise<TelegramJoinedDialog[]> {
+  const client = await getOrInitTelegramClient(customSessionString);
   if (client && client.connected) {
     try {
       const dialogs = await client.getDialogs({ limit: 150 });
@@ -631,11 +638,10 @@ export async function getMyTelegramDialogs(): Promise<TelegramJoinedDialog[]> {
 }
 
 /**
- * Synchronize real Telegram unread message status for approved contacts from official MTProto dialogs
- * ALSO discovers any unread messages received from ANY Telegram contact so user never misses a notification!
+ * Synchronize real Telegram unread message status and auto-populate all real Telegram 1-on-1 contacts!
  */
-export async function syncContactUnreadStatusFromTelegram(): Promise<void> {
-  const client = await getOrInitTelegramClient();
+export async function syncContactUnreadStatusFromTelegram(customSessionString?: string): Promise<void> {
+  const client = await getOrInitTelegramClient(customSessionString);
   if (!client || !client.connected) return;
 
   try {
@@ -667,9 +673,9 @@ export async function syncContactUnreadStatusFromTelegram(): Promise<void> {
       }
     }
 
-    // 2. Discover ANY real Telegram 1-on-1 contact dialog with unread messages!
+    // 2. Discover and populate ALL real Telegram 1-on-1 contact conversations into contacts!
     for (const d of dialogs) {
-      if (d.isUser && d.unreadCount && d.unreadCount > 0) {
+      if (d.isUser) {
         const entity = d.entity as unknown as {
           id?: { toString: () => string };
           username?: string;
@@ -678,27 +684,38 @@ export async function syncContactUnreadStatusFromTelegram(): Promise<void> {
           phone?: string;
         };
         const dId = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
+        // Exclude Telegram service notifications (ID 777000)
+        if (!dId || dId === '777000') continue;
+
         const dUser = entity?.username?.toLowerCase() || '';
 
-        const alreadyExists = contacts.some((c) => {
+        const existing = contacts.find((c) => {
           const cUser = c.username.toLowerCase().replace(/^@/, '');
           const cId = c.id.toLowerCase().replace(/^contact-/, '');
           return (dUser && cUser === dUser) || (dId && (cId === dId || c.id === dId));
         });
 
-        if (!alreadyExists && dId) {
-          // Auto-register new contact who sent a message so the user gets alerted immediately!
+        const unread = d.unreadCount || 0;
+        const msgDate = d.date ? new Date(d.date * 1000).toISOString() : new Date().toISOString();
+
+        if (existing) {
+          existing.lastMessageAt = msgDate;
+          if (unread > 0) {
+            updateContactStatus(existing.id, 'new_message', unread);
+          }
+        } else {
+          // Auto-register real Telegram contact so user sees them on the interface!
           addApprovedContact({
             id: `contact-${dId}`,
             username: entity?.username || `user_${dId}`,
             firstName: d.title || entity?.firstName || 'Telegram Contact',
             lastName: entity?.lastName || '',
             phone: entity?.phone || undefined,
-            status: 'new_message',
-            unreadCount: d.unreadCount,
+            status: unread > 0 ? 'new_message' : 'no_new_message',
+            unreadCount: unread,
             notificationsEnabled: true,
             addedAt: new Date().toISOString(),
-            lastMessageAt: new Date().toISOString(),
+            lastMessageAt: msgDate,
           });
         }
       }

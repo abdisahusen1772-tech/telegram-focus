@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
     const session = getUserSession();
     const response = NextResponse.json({
       success: true,
+      session,
       user: result.user,
       message: 'Successfully connected Telegram account',
     });

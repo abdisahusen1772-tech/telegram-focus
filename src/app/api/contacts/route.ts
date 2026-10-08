@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApprovedContacts, addApprovedContact, removeApprovedContact, getUserSession } from '@/lib/db';
+import { getApprovedContacts, addApprovedContact, removeApprovedContact, togglePinContact } from '@/lib/db';
 import { verifyTelegramUsername, syncContactUnreadStatusFromTelegram } from '@/lib/telegram';
+import { resolveSession } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const session = getUserSession();
+    const session = resolveSession(req);
     if (session && !session.isDemoMode && session.isConnected && session.sessionString) {
       try {
-        const syncPromise = syncContactUnreadStatusFromTelegram();
+        const syncPromise = syncContactUnreadStatusFromTelegram(session.sessionString);
         const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6500));
         await Promise.race([syncPromise, timeoutPromise]);
       } catch (syncErr) {
@@ -102,6 +103,40 @@ export async function DELETE(req: NextRequest) {
     console.error('Error removing contact:', error);
     return NextResponse.json(
       { success: false, error: 'Failed to remove contact' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, action } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'Contact ID is required' },
+        { status: 400 }
+      );
+    }
+
+    if (action === 'toggle_pin') {
+      const isPinned = togglePinContact(id);
+      return NextResponse.json({
+        success: true,
+        isPinned,
+        message: `Contact ${isPinned ? 'pinned to top' : 'unpinned'}`,
+      });
+    }
+
+    return NextResponse.json(
+      { success: false, error: 'Unknown action' },
+      { status: 400 }
+    );
+  } catch (error) {
+    console.error('Error updating contact:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to update contact' },
       { status: 500 }
     );
   }

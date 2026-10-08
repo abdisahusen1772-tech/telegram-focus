@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { HomeScreen } from '@/components/HomeScreen';
 import { ConversationView } from '@/components/ConversationView';
 import { ChannelView } from '@/components/ChannelView';
@@ -61,20 +61,35 @@ export default function TelegramFocusApp() {
     isContact?: boolean;
   } | null>(null);
 
+  // Unread tracker for incoming real-time notifications
+  const prevUnreadContactsRef = useRef<Set<string>>(new Set());
+  const initialLoadDoneRef = useRef(false);
+
   // Network & Sync State
   const [isOffline, setIsOffline] = useState(false);
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // Helper to retrieve localStorage session token
+  const getAuthHeaders = useCallback((): Record<string, string> => {
+    if (typeof window === 'undefined') return {};
+    const token = localStorage.getItem('tg_focus_session');
+    return token ? { 'x-telegram-session': token } : {};
+  }, []);
+
   // Initial data loading
   const loadData = useCallback(async () => {
     setIsSyncing(true);
+    const authHeaders = getAuthHeaders();
     try {
       // 1. Auth Status
-      const authRes = await fetch('/api/auth/status');
+      const authRes = await fetch('/api/auth/status', { headers: authHeaders });
       const authData = await authRes.json();
       if (authData.success) {
         setSession(authData.session);
+        if (authData.session?.sessionString && typeof window !== 'undefined') {
+          localStorage.setItem('tg_focus_session', authData.session.sessionString);
+        }
         setIsApiConfigured(authData.isApiConfigured);
         if (authData.settings) {
           setSettings(authData.settings);
@@ -93,16 +108,50 @@ export default function TelegramFocusApp() {
       }
 
       // 2. Contacts
-      const contactsRes = await fetch('/api/contacts');
+      const contactsRes = await fetch('/api/contacts', { headers: authHeaders });
       const contactsData = await contactsRes.json();
-      if (contactsData.success) {
-        setContacts(contactsData.contacts);
+      if (contactsData.success && Array.isArray(contactsData.contacts)) {
+        const newContacts: ApprovedContact[] = contactsData.contacts;
+
+        // Check if any contact newly received a message to trigger the pop-up notification
+        if (initialLoadDoneRef.current) {
+          newContacts.forEach((c) => {
+            const isUnread = c.status === 'new_message' || (c.unreadCount && c.unreadCount > 0);
+            const wasUnread = prevUnreadContactsRef.current.has(c.id);
+            if (isUnread && !wasUnread) {
+              const contactName = `${c.firstName} ${c.lastName || ''}`.trim();
+              if (settings.notificationsEnabled) {
+                notifyContactMessage(contactName, settings.soundEnabled);
+              }
+              setActiveToast({
+                title: `New message from ${contactName}`,
+                subtitle: 'Preview hidden for focus • Tap to view',
+                peerId: c.id,
+                isContact: true,
+              });
+              setTimeout(() => {
+                setActiveToast(null);
+              }, 6000);
+            }
+          });
+        }
+
+        const unreadSet = new Set<string>();
+        newContacts.forEach((c) => {
+          if (c.status === 'new_message' || (c.unreadCount && c.unreadCount > 0)) {
+            unreadSet.add(c.id);
+          }
+        });
+        prevUnreadContactsRef.current = unreadSet;
+        initialLoadDoneRef.current = true;
+
+        setContacts(newContacts);
       }
 
       // 3. Channels
-      const channelsRes = await fetch('/api/channels');
+      const channelsRes = await fetch('/api/channels', { headers: authHeaders });
       const channelsData = await channelsRes.json();
-      if (channelsData.success) {
+      if (channelsData.success && Array.isArray(channelsData.channels)) {
         setChannels(channelsData.channels);
       }
 
@@ -115,7 +164,7 @@ export default function TelegramFocusApp() {
     } finally {
       setIsSyncing(false);
     }
-  }, []);
+  }, [getAuthHeaders, settings.notificationsEnabled, settings.soundEnabled]);
 
   useEffect(() => {
     loadData();
@@ -142,13 +191,13 @@ export default function TelegramFocusApp() {
     };
   }, [loadData]);
 
-  // Periodic background check for new contact messages
+  // Periodic background check for new contact messages (5s polling for snappy real-time updates)
   useEffect(() => {
     const syncInterval = setInterval(() => {
       if (!isOffline && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         loadData();
       }
-    }, 10000);
+    }, 5000);
     return () => clearInterval(syncInterval);
   }, [loadData, isOffline]);
 
@@ -173,7 +222,10 @@ export default function TelegramFocusApp() {
     try {
       const res = await fetch('/api/settings', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify(partial),
       });
       const data = await res.json();
@@ -193,9 +245,54 @@ export default function TelegramFocusApp() {
     handleUpdateSettings({ theme: newTheme });
   };
 
+  const handleTogglePinContact = async (id: string) => {
+    try {
+      const res = await fetch('/api/contacts', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ action: 'toggle_pin', id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setContacts((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, isPinned: !c.isPinned } : c))
+        );
+      }
+    } catch (e) {
+      console.error('Failed to toggle pin contact:', e);
+    }
+  };
+
+  const handleTogglePinChannel = async (id: string) => {
+    try {
+      const res = await fetch('/api/channels', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ action: 'toggle_pin', id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setChannels((prev) =>
+          prev.map((ch) => (ch.id === id ? { ...ch, isPinned: !ch.isPinned } : ch))
+        );
+      }
+    } catch (e) {
+      console.error('Failed to toggle pin channel:', e);
+    }
+  };
+
   const handleRemoveContact = async (id: string) => {
     try {
-      await fetch(`/api/contacts?id=${id}`, { method: 'DELETE' });
+      await fetch(`/api/contacts?id=${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
       setContacts((prev) => prev.filter((c) => c.id !== id));
       if (activeContact?.id === id) setActiveContact(null);
     } catch (e) {
@@ -205,7 +302,10 @@ export default function TelegramFocusApp() {
 
   const handleRemoveChannel = async (id: string) => {
     try {
-      await fetch(`/api/channels?id=${id}`, { method: 'DELETE' });
+      await fetch(`/api/channels?id=${id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
       setChannels((prev) => prev.filter((ch) => ch.id !== id));
       if (activeChannel?.id === id) setActiveChannel(null);
     } catch (e) {
@@ -215,7 +315,13 @@ export default function TelegramFocusApp() {
 
   const handleDisconnect = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('tg_focus_session');
+      }
       setSession(null);
     } catch (e) {
       console.error('Failed to disconnect:', e);
@@ -224,7 +330,10 @@ export default function TelegramFocusApp() {
 
   const handleClearCache = async () => {
     try {
-      await fetch('/api/privacy/clear-cache', { method: 'POST' });
+      await fetch('/api/privacy/clear-cache', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      });
       loadData();
     } catch (e) {
       console.error('Failed to clear cache:', e);
@@ -476,6 +585,8 @@ export default function TelegramFocusApp() {
               onSelectChannel={(ch) => setActiveChannel(ch)}
               onSelectContact={(c) => setActiveContact(c)}
               onOpenAddModal={(t) => setAddModalType(t)}
+              onTogglePinChannel={handleTogglePinChannel}
+              onTogglePinContact={handleTogglePinContact}
               onSimulateIncoming={handleSimulateIncoming}
               focusMode={settings.focusMode}
               onOpenFocusModal={() => setIsFocusModalOpen(true)}

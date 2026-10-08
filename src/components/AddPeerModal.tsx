@@ -46,11 +46,19 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
     }
   }, [isOpen, activeTab, isContact]);
 
+  const getAuthHeaders = (): Record<string, string> => {
+    if (typeof window === 'undefined') return {};
+    const token = localStorage.getItem('tg_focus_session');
+    return token ? { 'x-telegram-session': token } : {};
+  };
+
   const loadDialogs = async () => {
     setLoadingDialogs(true);
     setError(null);
     try {
-      const res = await fetch('/api/telegram/dialogs');
+      const res = await fetch('/api/telegram/dialogs', {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.notConnected) {
         setIsNotConnected(true);
@@ -80,7 +88,10 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
       const endpoint = isContact ? '/api/contacts' : '/api/channels';
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({ username: clean }),
       });
 
@@ -110,7 +121,10 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
     try {
       const res = await fetch('/api/channels', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({
           id: d.id,
           title: d.title,

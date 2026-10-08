@@ -1,30 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserSession, setUserSession, getAppSettings, getApiCredentials } from '@/lib/db';
+import { getAppSettings, getApiCredentials } from '@/lib/db';
 import { isTelegramApiConfigured } from '@/lib/telegram';
-import { UserSession } from '@/lib/types';
+import { resolveSession } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    let session = getUserSession();
-
-    // Check cookie fallback if serverless container started without disk session
-    if (!session) {
-      const cookieVal = req.cookies.get('tg_focus_session')?.value;
-      if (cookieVal) {
-        try {
-          const parsed = JSON.parse(Buffer.from(cookieVal, 'base64').toString('utf-8')) as UserSession;
-          if (parsed && parsed.sessionString) {
-            setUserSession(parsed);
-            session = parsed;
-          }
-        } catch (e) {
-          console.warn('Could not restore session from cookie:', e);
-        }
-      }
-    }
+    const session = resolveSession(req);
 
     const settings = getAppSettings();
     const isApiConfigured = isTelegramApiConfigured();

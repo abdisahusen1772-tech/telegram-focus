@@ -119,6 +119,13 @@ export function ConnectTelegramModal({
         throw new Error(data.error || 'Invalid verification code');
       }
 
+      if (typeof window !== 'undefined') {
+        const token = data.session?.sessionString || (typeof data.session === 'string' ? data.session : '');
+        if (token) {
+          localStorage.setItem('tg_focus_session', token);
+        }
+      }
+
       onConnected();
       onClose();
     } catch (err: unknown) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPeerMessages, addMessageToPeer, markPeerAsRead, getUserSession, getApprovedContacts, getApprovedChannels } from '@/lib/db';
+import { getPeerMessages, addMessageToPeer, markPeerAsRead, getApprovedContacts, getApprovedChannels } from '@/lib/db';
 import { sendTelegramMessage, syncMessagesFromTelegram } from '@/lib/telegram';
 import { Message } from '@/lib/types';
+import { resolveSession } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const session = getUserSession();
+    const session = resolveSession(req);
     const contacts = getApprovedContacts();
     const channels = getApprovedChannels();
     const cleanId = peerId.toLowerCase().replace(/^@/, '');
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
       try {
         const syncId = targetContact?.id || targetChannel?.id || peerId;
         const syncUser = targetContact?.username || targetChannel?.username || '';
-        const syncPromise = syncMessagesFromTelegram(syncId, syncUser);
+        const syncPromise = syncMessagesFromTelegram(syncId, syncUser, session.sessionString);
         const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6500));
         await Promise.race([syncPromise, timeoutPromise]);
         // Refresh messages in case new ones were saved
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const session = getUserSession();
+    const session = resolveSession(req);
     const contacts = getApprovedContacts();
     const targetContact = contacts.find(c => c.id === peerId);
     const channels = getApprovedChannels();

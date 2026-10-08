@@ -17,9 +17,17 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
   const [notificationsOn, setNotificationsOn] = useState(channel.notificationsEnabled);
   const [loading, setLoading] = useState(true);
 
+  const getAuthHeaders = (): Record<string, string> => {
+    if (typeof window === 'undefined') return {};
+    const token = localStorage.getItem('tg_focus_session');
+    return token ? { 'x-telegram-session': token } : {};
+  };
+
   const fetchChannelPosts = async () => {
     try {
-      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(channel.id)}`);
+      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(channel.id)}`, {
+        headers: getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.success && Array.isArray(data.messages)) {
         setPosts(data.messages);
@@ -40,7 +48,10 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
     try {
       const res = await fetch('/api/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify({
           peerId: channel.id,
           text,

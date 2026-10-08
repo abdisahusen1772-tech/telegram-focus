@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Pin } from 'lucide-react';
 import { ApprovedContact, ApprovedChannel } from '@/lib/types';
 
 interface HomeScreenProps {
@@ -10,6 +10,8 @@ interface HomeScreenProps {
   onSelectChannel: (channel: ApprovedChannel) => void;
   onSelectContact: (contact: ApprovedContact) => void;
   onOpenAddModal: (type: 'contact' | 'channel') => void;
+  onTogglePinChannel?: (id: string) => void;
+  onTogglePinContact?: (id: string) => void;
   onSimulateIncoming?: (peerId: string) => void;
   focusMode: boolean;
   onOpenFocusModal: () => void;
@@ -23,11 +25,31 @@ export function HomeScreen({
   onSelectChannel,
   onSelectContact,
   onOpenAddModal,
+  onTogglePinChannel,
+  onTogglePinContact,
   focusMode,
   onOpenFocusModal,
   onOpenThemeModal,
   themeName,
 }: HomeScreenProps) {
+  // Sort channels: Pinned first, then alphabetically
+  const sortedChannels = [...channels].sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    return a.title.localeCompare(b.title);
+  });
+
+  // Sort contacts: Pinned first, then unread messages, then alphabetically
+  const sortedContacts = [...contacts].sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    const aUnread = a.status === 'new_message' || (a.unreadCount && a.unreadCount > 0);
+    const bUnread = b.status === 'new_message' || (b.unreadCount && b.unreadCount > 0);
+    if (aUnread && !bUnread) return -1;
+    if (!aUnread && bUnread) return 1;
+    return a.firstName.localeCompare(b.firstName);
+  });
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 max-w-md mx-auto w-full flex flex-col justify-between select-none">
       <div>
@@ -85,7 +107,7 @@ export function HomeScreen({
           </div>
 
           <div className="space-y-1">
-            {channels.length === 0 ? (
+            {sortedChannels.length === 0 ? (
               <div className="py-6 text-center border border-dashed border-stone-200 rounded-lg">
                 <p className="text-xs text-stone-400 font-mono">
                   No approved channels or groups.
@@ -98,29 +120,52 @@ export function HomeScreen({
                 </button>
               </div>
             ) : (
-              channels.map((channel) => (
+              sortedChannels.map((channel) => (
                 <div
                   key={channel.id}
-                  className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-white hover:shadow-2xs transition-all duration-150 group border border-transparent hover:border-stone-200/80 cursor-pointer"
+                  className={`flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-white hover:shadow-2xs transition-all duration-150 group border cursor-pointer ${
+                    channel.isPinned
+                      ? 'border-amber-300/70 bg-amber-50/30'
+                      : 'border-transparent hover:border-stone-200/80'
+                  }`}
                   onClick={() => onSelectChannel(channel)}
                 >
-                  <div className="flex items-center space-x-2.5 truncate">
+                  <div className="flex items-center space-x-2 truncate">
+                    {channel.isPinned && (
+                      <span className="text-[10px] text-amber-600 font-mono shrink-0" title="Pinned to top">
+                        📌
+                      </span>
+                    )}
                     <span className="text-sm font-normal text-stone-900 tracking-tight group-hover:translate-x-0.5 transition-transform duration-150">
                       {channel.title}
                     </span>
                     {channel.isPrivate && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-stone-100 text-stone-500 border border-stone-200">
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-stone-100 text-stone-500 border border-stone-200 shrink-0">
                         {channel.isGroup ? 'Group' : 'Private'}
                       </span>
                     )}
                   </div>
 
-                  <div className="flex items-center space-x-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center space-x-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                     {channel.hasNewPost && (
                       <span
                         className="w-2.5 h-2.5 rounded-full bg-blue-600 shadow-xs"
                         title="New post available"
                       />
+                    )}
+
+                    {onTogglePinChannel && (
+                      <button
+                        onClick={() => onTogglePinChannel(channel.id)}
+                        className={`p-1 rounded hover:bg-stone-200/60 transition cursor-pointer ${
+                          channel.isPinned
+                            ? 'text-amber-600 opacity-100'
+                            : 'text-stone-300 hover:text-stone-600 opacity-0 group-hover:opacity-100'
+                        }`}
+                        title={channel.isPinned ? 'Unpin channel' : 'Pin to top'}
+                      >
+                        <Pin className={`w-3.5 h-3.5 ${channel.isPinned ? 'fill-amber-600' : ''}`} />
+                      </button>
                     )}
                   </div>
                 </div>
@@ -149,7 +194,7 @@ export function HomeScreen({
           </div>
 
           <div className="space-y-1">
-            {contacts.length === 0 ? (
+            {sortedContacts.length === 0 ? (
               <div className="py-6 text-center border border-dashed border-stone-200 rounded-lg">
                 <p className="text-xs text-stone-400 font-mono">
                   No approved contacts.
@@ -162,26 +207,50 @@ export function HomeScreen({
                 </button>
               </div>
             ) : (
-              contacts.map((contact) => {
-                const hasNew = contact.status === 'new_message';
+              sortedContacts.map((contact) => {
+                const hasNew = contact.status === 'new_message' || (contact.unreadCount && contact.unreadCount > 0);
                 return (
                   <div
                     key={contact.id}
-                    className="flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-white hover:shadow-2xs transition-all duration-150 group border border-transparent hover:border-stone-200/80 cursor-pointer"
+                    className={`flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-white hover:shadow-2xs transition-all duration-150 group border cursor-pointer ${
+                      contact.isPinned
+                        ? 'border-amber-300/70 bg-amber-50/30'
+                        : 'border-transparent hover:border-stone-200/80'
+                    }`}
                     onClick={() => onSelectContact(contact)}
                   >
-                    <div className="flex items-center space-x-2.5 truncate">
+                    <div className="flex items-center space-x-2 truncate">
+                      {contact.isPinned && (
+                        <span className="text-[10px] text-amber-600 font-mono shrink-0" title="Pinned to top">
+                          📌
+                        </span>
+                      )}
                       <span className="text-sm font-normal text-stone-900 tracking-tight group-hover:translate-x-0.5 transition-transform duration-150">
                         {contact.firstName} {contact.lastName || ''}
                       </span>
                     </div>
 
-                    <div className="flex items-center space-x-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center space-x-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      {/* Pin button */}
+                      {onTogglePinContact && (
+                        <button
+                          onClick={() => onTogglePinContact(contact.id)}
+                          className={`p-1 rounded hover:bg-stone-200/60 transition cursor-pointer ${
+                            contact.isPinned
+                              ? 'text-amber-600 opacity-100'
+                              : 'text-stone-300 hover:text-stone-600 opacity-0 group-hover:opacity-100'
+                          }`}
+                          title={contact.isPinned ? 'Unpin contact' : 'Pin to top'}
+                        >
+                          <Pin className={`w-3.5 h-3.5 ${contact.isPinned ? 'fill-amber-600' : ''}`} />
+                        </button>
+                      )}
+
                       {/* Status indicator: 🔵 New message vs ⚪ No new message */}
                       <div
                         onClick={() => onSelectContact(contact)}
                         className="cursor-pointer p-0.5 flex items-center justify-center"
-                        title={hasNew ? '🔵 New message' : '⚪ No new message'}
+                        title={hasNew ? '🔵 New message from contact' : '⚪ No new message'}
                       >
                         {hasNew ? (
                           <div className="w-3.5 h-3.5 rounded-full indicator-blue shadow-xs" />
