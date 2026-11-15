@@ -1,16 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw, Paperclip, Camera, Image as ImageIcon, Download, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw, Paperclip, Camera, Image as ImageIcon, Download, ExternalLink, UserMinus } from 'lucide-react';
 import { ApprovedContact, Message } from '@/lib/types';
 
 interface ConversationViewProps {
   contact: ApprovedContact;
   onBack: () => void;
   onMessageSent?: () => void;
+  onRemoveContact?: (id: string) => void;
 }
 
-export function ConversationView({ contact, onBack, onMessageSent }: ConversationViewProps) {
+export function ConversationView({ contact, onBack, onMessageSent, onRemoveContact }: ConversationViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -174,7 +175,23 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1.5 sm:space-x-2">
+          {onRemoveContact && (
+            <button
+              onClick={() => {
+                const name = `${contact.firstName} ${contact.lastName || ''}`.trim();
+                if (window.confirm(`Remove ${name} from approved contacts?`)) {
+                  onRemoveContact(contact.id);
+                  onBack();
+                }
+              }}
+              className="p-1.5 text-stone-400 hover:text-red-600 rounded-md hover:bg-stone-100 transition cursor-pointer flex items-center space-x-1"
+              title="Remove / Unadd contact"
+            >
+              <UserMinus className="w-4 h-4" />
+              <span className="text-[10px] font-mono hidden md:inline">Unadd</span>
+            </button>
+          )}
           <button
             onClick={() => fetchConversation(true)}
             disabled={refreshing}

@@ -38,13 +38,13 @@ export async function GET(req: NextRequest) {
     // 1. Immediately retrieve locally cached messages for instant rendering
     let messages = getPeerMessages(peerId);
 
-    // 2. If connected to real Telegram, attempt live sync with 6.5s timeout
+    // 2. If connected to real Telegram, attempt live sync with 20s timeout
     if (session && !session.isDemoMode && session.isConnected && session.sessionString && (targetContact || targetChannel)) {
       try {
         const syncId = targetContact?.id || targetChannel?.id || peerId;
         const syncUser = targetContact?.username || targetChannel?.username || '';
         const syncPromise = syncMessagesFromTelegram(syncId, syncUser, session.sessionString);
-        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 6500));
+        const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 20000));
         await Promise.race([syncPromise, timeoutPromise]);
         // Refresh messages in case new ones were saved
         messages = getPeerMessages(peerId);
@@ -122,13 +122,31 @@ export async function POST(req: NextRequest) {
       replyToSnippet,
     };
 
-    const saved = addMessageToPeer(newMessage);
-
-    // If connected to real Telegram, dispatch to recipient contact or group
+    // If connected to real Telegram, dispatch to recipient contact, channel, or group
     const targetIdentifier = targetContact?.username || targetContact?.id || targetChannel?.username || targetChannel?.id;
     if (session && !session.isDemoMode && targetIdentifier && session.sessionString) {
-      await sendTelegramMessage(targetIdentifier, (text || '').trim(), hasMedia ? media : undefined, session.sessionString);
+      try {
+        const sent = await sendTelegramMessage(targetIdentifier, (text || '').trim(), hasMedia ? media : undefined, session.sessionString);
+        if (!sent) {
+          throw new Error('Telegram server did not confirm dispatch');
+        }
+      } catch (tgSendErr: unknown) {
+        console.error('Failed to dispatch telegram message:', tgSendErr);
+        const errMsg = tgSendErr instanceof Error ? tgSendErr.message : String(tgSendErr);
+        if (errMsg.includes('CHAT_WRITE_FORBIDDEN') || errMsg.includes('CHAT_ADMIN_REQUIRED')) {
+          return NextResponse.json(
+            { success: false, error: 'You do not have permission to post in this channel on Telegram (Channel Admin or Owner permissions required).' },
+            { status: 403 }
+          );
+        }
+        return NextResponse.json(
+          { success: false, error: `Telegram delivery error: ${errMsg || 'Could not send message'}` },
+          { status: 500 }
+        );
+      }
     }
+
+    const saved = addMessageToPeer(newMessage);
 
     return NextResponse.json({
       success: true,

@@ -499,32 +499,34 @@ export async function sendTelegramMessage(
         .toLowerCase();
       let entity: unknown = null;
 
-      // 1. Search dialogs first (contains pre-resolved inputEntity with accessHash)
-      try {
-        const dialogs = await client.getDialogs({ limit: 150 });
-        const matched = dialogs.find((d) => {
-          const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
-          const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
-          const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
-          const dUser = dEntity?.username?.toLowerCase();
-          return (
-            cleanDId === cleanRawId ||
-            (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
-          );
-        });
-        if (matched) {
-          entity = matched.inputEntity || matched.entity;
-        }
-      } catch (dErr) {
-        console.warn('Dialog search notice in sendTelegramMessage:', dErr);
-      }
-
-      // 2. Fallback: try getEntity by clean username
-      if (!entity && cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+      // 1. If username is available and not a placeholder, try direct entity lookup first (fastest)
+      if (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
         try {
           entity = await client.getEntity(cleanUsername);
         } catch {
-          // ignore
+          // Fall through to dialog search
+        }
+      }
+
+      // 2. Search dialogs (contains pre-resolved inputEntity with accessHash)
+      if (!entity) {
+        try {
+          const dialogs = await client.getDialogs({ limit: 120 });
+          const matched = dialogs.find((d) => {
+            const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
+            const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
+            const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+            const dUser = dEntity?.username?.toLowerCase();
+            return (
+              cleanDId === cleanRawId ||
+              (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
+            );
+          });
+          if (matched) {
+            entity = matched.inputEntity || matched.entity;
+          }
+        } catch (dErr) {
+          console.warn('Dialog search notice in sendTelegramMessage:', dErr);
         }
       }
 
@@ -569,7 +571,7 @@ export async function sendTelegramMessage(
       return true;
     } catch (err) {
       console.error('Failed to send Telegram message:', err);
-      return false;
+      throw err;
     }
   }
   return true; // simulated in demo mode
@@ -619,38 +621,46 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
     const cleanRawId = peerId
       .replace(/^contact-/, '')
       .replace(/^channel-/, '')
+      .replace(/^user_/, '')
+      .replace(/^private_/, '')
       .replace(/^-100/, '')
       .replace(/^-/, '')
       .toLowerCase();
     let entity: unknown = null;
 
-    // Search dialogs first because dialogs contain pre-resolved InputEntity with valid accessHash!
-    const dialogs = await client.getDialogs({ limit: 150 });
-    const matched = dialogs.find((d) => {
-      const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string; title?: string };
-      const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
-      const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
-      const dUser = dEntity?.username?.toLowerCase();
-      return (
-        cleanDId === cleanRawId ||
-        (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
-      );
-    });
-
-    if (matched) {
-      entity = matched.inputEntity || matched.entity;
-    }
-
-    // Fallback: try resolving by username
-    if (!entity && cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+    // 1. Try resolving by public username first (instant MTProto resolution)
+    if (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
       try {
         entity = await client.getEntity(cleanUsername);
       } catch {
-        // ignore
+        // Fall back to dialog enumeration
       }
     }
 
-    // Fallback: try resolving by numerical ID (-100 and clean)
+    // 2. Search dialogs if not resolved by username (dialogs contain accessHash for private channels/groups)
+    if (!entity) {
+      try {
+        const dialogs = await client.getDialogs({ limit: 120 });
+        const matched = dialogs.find((d) => {
+          const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string; title?: string };
+          const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
+          const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+          const dUser = dEntity?.username?.toLowerCase();
+          return (
+            cleanDId === cleanRawId ||
+            (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
+          );
+        });
+
+        if (matched) {
+          entity = matched.inputEntity || matched.entity;
+        }
+      } catch (dErr) {
+        console.warn('Dialog search notice in syncMessagesFromTelegram:', dErr);
+      }
+    }
+
+    // 3. Fallback: try resolving by numerical ID (-100 and clean)
     if (!entity && cleanRawId) {
       try {
         entity = await client.getEntity(`-100${cleanRawId}`);
@@ -1005,8 +1015,8 @@ export async function syncContactUnreadStatusFromTelegram(customSessionString?: 
 
       if (existing) {
         updateContactStatus(existing.id, status, unreadCount);
-      } else if (unreadCount > 0 || (d.message && !d.isChannel && !d.isGroup)) {
-        // Direct message from an individual person: automatically bring them into the app so user can read and reply!
+      } else if (unreadCount > 0) {
+        // Direct unread message from an individual person: automatically bring them into the app so user can read and reply!
         let displayName = `${entity?.firstName || ''} ${entity?.lastName || ''}`.trim();
         if (!displayName && d.title) displayName = d.title.trim();
         if (!displayName) displayName = dUsername || `User ${cleanId}`;

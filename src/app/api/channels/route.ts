@@ -28,27 +28,28 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { username, id, title, isGroup, isPrivate } = body;
 
-    // Direct addition of private joined channel or group from user's Telegram
+    // Direct addition of joined channel or group from user's Telegram
     if (id && title) {
       const cleanId = String(id).replace(/^-100/, '').replace(/^-/, '');
+      const cleanTitle = title.trim().replace(/^🔒\s*/, '').replace(/^👥\s*/, '');
       const newChannel: ApprovedChannel = {
         id: `channel-${cleanId}`,
-        username: username || `private_${cleanId}`,
-        title: isGroup ? `👥 ${title}` : `🔒 ${title}`,
-        about: isGroup ? 'Private Telegram Group' : 'Private Telegram Channel',
+        username: username || (isPrivate ? `private_${cleanId}` : cleanId),
+        title: cleanTitle,
+        about: isGroup ? 'Telegram Group' : (username ? `@${username}` : 'Telegram Channel'),
         notificationsEnabled: true,
         addedAt: new Date().toISOString(),
         lastPostAt: new Date().toISOString(),
         hasNewPost: false,
         isGroup: Boolean(isGroup),
-        isPrivate: true,
+        isPrivate: Boolean(isPrivate),
       };
 
       const saved = addApprovedChannel(newChannel);
       return NextResponse.json({
         success: true,
         channel: saved,
-        message: `Added private ${isGroup ? 'group' : 'channel'} "${title}" to Allowed list`,
+        message: `Added ${isGroup ? 'group' : 'channel'} "${cleanTitle}" to Allowed list`,
       });
     }
 

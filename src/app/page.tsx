@@ -419,25 +419,15 @@ export default function TelegramFocusApp() {
       const data = await res.json();
 
       if (data.success) {
-        // Trigger Distraction-Free Notification (STRICT PRIVACY: NEVER LEAKS MESSAGE BODY)
-        if (settings.notificationsEnabled) {
-          if (data.type === 'contact') {
-            notifyContactMessage(data.peerName, settings.soundEnabled);
-            setActiveToast({
-              title: `New message from ${data.peerName}`,
-              subtitle: 'Preview hidden for focus • Tap to view',
-              peerId,
-              isContact: true,
-            });
-          } else {
-            notifyChannelPost(data.peerName, settings.soundEnabled);
-            setActiveToast({
-              title: `New post in ${data.peerName}`,
-              subtitle: 'Preview hidden for focus • Tap to view',
-              peerId,
-              isContact: false,
-            });
-          }
+        // Trigger Distraction-Free Notification (STRICT DIRECT-ONLY RULE: Only 1-on-1 personal contacts alert)
+        if (settings.notificationsEnabled && data.type === 'contact') {
+          notifyContactMessage(data.peerName, settings.soundEnabled);
+          setActiveToast({
+            title: `New message from ${data.peerName}`,
+            subtitle: 'Preview hidden for focus • Tap to view',
+            peerId,
+            isContact: true,
+          });
 
           setTimeout(() => {
             setActiveToast(null);
@@ -612,6 +602,7 @@ export default function TelegramFocusApp() {
                 loadData();
               }}
               onMessageSent={loadData}
+              onRemoveContact={handleRemoveContact}
             />
           ) : activeChannel ? (
             <ChannelView
@@ -620,6 +611,7 @@ export default function TelegramFocusApp() {
                 setActiveChannel(null);
                 loadData();
               }}
+              onRemoveChannel={handleRemoveChannel}
               onNotificationToggled={(enabled) => {
                 setChannels((prev) =>
                   prev.map((c) =>
@@ -655,6 +647,8 @@ export default function TelegramFocusApp() {
               onOpenAddModal={(t) => setAddModalType(t)}
               onTogglePinChannel={handleTogglePinChannel}
               onTogglePinContact={handleTogglePinContact}
+              onRemoveContact={handleRemoveContact}
+              onRemoveChannel={handleRemoveChannel}
               onSimulateIncoming={handleSimulateIncoming}
               focusMode={settings.focusMode}
               onOpenFocusModal={() => setIsFocusModalOpen(true)}

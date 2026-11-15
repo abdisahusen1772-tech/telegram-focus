@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Plus, Pin } from 'lucide-react';
+import { Plus, Pin, Trash2, UserMinus } from 'lucide-react';
 import { ApprovedContact, ApprovedChannel } from '@/lib/types';
 
 interface HomeScreenProps {
@@ -12,6 +12,8 @@ interface HomeScreenProps {
   onOpenAddModal: (type: 'contact' | 'channel') => void;
   onTogglePinChannel?: (id: string) => void;
   onTogglePinContact?: (id: string) => void;
+  onRemoveContact?: (id: string) => void;
+  onRemoveChannel?: (id: string) => void;
   onSimulateIncoming?: (peerId: string) => void;
   focusMode: boolean;
   onOpenFocusModal: () => void;
@@ -28,6 +30,8 @@ export function HomeScreen({
   onOpenAddModal,
   onTogglePinChannel,
   onTogglePinContact,
+  onRemoveContact,
+  onRemoveChannel,
   focusMode,
   onOpenFocusModal,
   onOpenThemeModal,
@@ -180,6 +184,21 @@ export function HomeScreen({
                         <Pin className={`w-3.5 h-3.5 ${channel.isPinned ? 'fill-amber-600' : ''}`} />
                       </button>
                     )}
+
+                    {onRemoveChannel && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Remove "${channel.title}" from approved channels?`)) {
+                            onRemoveChannel(channel.id);
+                          }
+                        }}
+                        className="p-1 rounded text-stone-300 hover:text-red-600 hover:bg-stone-200/60 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                        title="Remove channel"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
@@ -256,6 +275,23 @@ export function HomeScreen({
                           title={contact.isPinned ? 'Unpin contact' : 'Pin to top'}
                         >
                           <Pin className={`w-3.5 h-3.5 ${contact.isPinned ? 'fill-amber-600' : ''}`} />
+                        </button>
+                      )}
+
+                      {/* Remove / Unadd Contact button */}
+                      {onRemoveContact && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const name = `${contact.firstName} ${contact.lastName || ''}`.trim();
+                            if (window.confirm(`Remove ${name} from approved contacts?`)) {
+                              onRemoveContact(contact.id);
+                            }
+                          }}
+                          className="p-1 rounded text-stone-300 hover:text-red-600 hover:bg-stone-200/60 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                          title="Remove / unadd contact"
+                        >
+                          <UserMinus className="w-3.5 h-3.5" />
                         </button>
                       )}
 

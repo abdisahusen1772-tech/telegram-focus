@@ -1,16 +1,17 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock, FileText, Download, X, Paperclip, Camera, Image as ImageIcon, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock, FileText, Download, X, Paperclip, Camera, Image as ImageIcon, RefreshCw, Trash2 } from 'lucide-react';
 import { ApprovedChannel, Message } from '@/lib/types';
 
 interface ChannelViewProps {
   channel: ApprovedChannel;
   onBack: () => void;
   onNotificationToggled?: (enabled: boolean) => void;
+  onRemoveChannel?: (id: string) => void;
 }
 
-export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelViewProps) {
+export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveChannel }: ChannelViewProps) {
   const [posts, setPosts] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
@@ -109,9 +110,12 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
         setInputText('');
         setSelectedMedia(null);
         setPosts((prev) => [...prev, data.message]);
+      } else {
+        alert(data.error || 'Failed to post: Administrator or Owner privileges are required to post to this channel.');
       }
     } catch (err) {
-      console.error('Failed to send group message:', err);
+      console.error('Failed to send channel message:', err);
+      alert('Failed to send message to Telegram.');
     } finally {
       setSending(false);
     }
@@ -184,6 +188,22 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
         </div>
 
         <div className="flex items-center space-x-1.5">
+          {onRemoveChannel && (
+            <button
+              onClick={() => {
+                if (window.confirm(`Remove "${channel.title}" from approved channels?`)) {
+                  onRemoveChannel(channel.id);
+                  onBack();
+                }
+              }}
+              className="p-1.5 text-stone-400 hover:text-red-600 rounded-md hover:bg-stone-100 transition cursor-pointer flex items-center space-x-1"
+              title="Remove / Unadd channel"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="text-[10px] font-mono hidden md:inline">Unadd</span>
+            </button>
+          )}
+
           <button
             onClick={() => fetchChannelPosts(true)}
             disabled={refreshing}
@@ -220,15 +240,18 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
 
       {/* Distraction-Free Notification Guarantee Banner */}
       <div className="bg-stone-100/80 border-b border-stone-200/70 px-4 py-2 text-[11px] text-stone-600 flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase text-stone-500">Privacy rule</span>
+        <span className="font-mono text-[10px] uppercase text-stone-500">Live Telegram Feed</span>
         <span className="font-mono text-stone-500 text-[10px]">
-          Preview: Hidden (&ldquo;New post in {channel.title.replace(/[^\w\s]/gi, '').trim()}&rdquo;)
+          Direct from Telegram
         </span>
       </div>
 
-      {/* About Box if provided */}
-      {channel.about && (
-        <div className="px-4 py-3 bg-white/70 border-b border-stone-200/80 text-xs text-stone-600 leading-relaxed font-sans">
+      {/* About Box if provided and contains genuine description */}
+      {channel.about &&
+        !channel.about.toLowerCase().includes('private telegram') &&
+        !channel.about.toLowerCase().includes('telegram channel') &&
+        !channel.about.toLowerCase().includes('telegram group') && (
+        <div className="px-4 py-2.5 bg-white/70 border-b border-stone-200/80 text-xs text-stone-600 leading-relaxed font-sans">
           {channel.about}
         </div>
       )}
@@ -332,65 +355,63 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
         </div>
       )}
 
-      {/* Group Message Composer if this is a group chat */}
-      {channel.isGroup && (
-        <form
-          onSubmit={handleSendMessage}
-          className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-1.5 shrink-0"
+      {/* Post Composer for Channels & Groups (Owner & Admin can broadcast like in official Telegram app) */}
+      <form
+        onSubmit={handleSendMessage}
+        className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-1.5 shrink-0"
+      >
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelect}
+          accept="image/*,.pdf,.doc,.docx,.txt,.zip"
+          className="hidden"
+        />
+
+        <input
+          type="file"
+          ref={cameraInputRef}
+          onChange={handleFileSelect}
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+        />
+
+        <button
+          type="button"
+          onClick={() => cameraInputRef.current?.click()}
+          className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+          title="Take photo with camera"
         >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            accept="image/*,.pdf,.doc,.docx,.txt,.zip"
-            className="hidden"
-          />
+          <Camera className="w-4 h-4 stroke-[2]" />
+        </button>
 
-          <input
-            type="file"
-            ref={cameraInputRef}
-            onChange={handleFileSelect}
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-          />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+          title="Attach file or photo"
+        >
+          <Paperclip className="w-4 h-4 stroke-[2]" />
+        </button>
 
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
-            title="Take photo with camera"
-          >
-            <Camera className="w-4 h-4 stroke-[2]" />
-          </button>
+        <input
+          type="text"
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder={channel.isGroup ? `Message group...` : `Broadcast post to ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`}
+          className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
+        />
 
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
-            title="Attach file or photo"
-          >
-            <Paperclip className="w-4 h-4 stroke-[2]" />
-          </button>
-
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={`Message ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`}
-            className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
-          />
-
-          <button
-            type="submit"
-            disabled={(!inputText.trim() && !selectedMedia) || sending}
-            className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-lg transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
-            title="Send to group"
-          >
-            <Send className="w-4 h-4 stroke-[2]" />
-          </button>
-        </form>
-      )}
+        <button
+          type="submit"
+          disabled={(!inputText.trim() && !selectedMedia) || sending}
+          className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-lg transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
+          title={channel.isGroup ? "Send to group" : "Broadcast post to channel"}
+        >
+          <Send className="w-4 h-4 stroke-[2]" />
+        </button>
+      </form>
 
       {/* Lightbox for viewing full-screen photos in channel */}
       {lightboxImg && (

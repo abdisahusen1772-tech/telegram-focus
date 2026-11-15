@@ -87,19 +87,10 @@ export function notifyContactMessage(contactName: string, soundEnabled = true): 
 }
 
 /**
- * Trigger a channel post notification with STRICTLY HIDDEN PREVIEW
+ * Channel posts and group messages are strictly silenced per user preference:
+ * Only direct 1-on-1 personal messages to the user's account may trigger audio chimes or OS notifications.
  */
-export function notifyChannelPost(channelTitle: string, soundEnabled = true): void {
-  if (soundEnabled) {
-    playCalmChime();
-  }
-
-  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-    new Notification(`New post in ${channelTitle}`, {
-      body: 'Open Focus to view post',
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      silent: true,
-    });
-  }
+export function notifyChannelPost(channelTitle: string, soundEnabled = false): void {
+  // Silence all group and channel notifications completely.
+  return;
 }
