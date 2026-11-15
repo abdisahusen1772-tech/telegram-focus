@@ -655,6 +655,8 @@ export default function TelegramFocusApp() {
               onOpenThemeModal={() => setIsThemeModalOpen(true)}
               onOpenStoryModal={() => setIsStoryModalOpen(true)}
               themeName={currentThemeObj.name}
+              session={session}
+              onOpenConnectModal={() => setIsConnectModalOpen(true)}
             />
           )}
         </div>
@@ -750,6 +752,7 @@ export default function TelegramFocusApp() {
         isOpen={isStoryModalOpen}
         onClose={() => setIsStoryModalOpen(false)}
         onSuccess={loadData}
+        onOpenConnectModal={() => setIsConnectModalOpen(true)}
       />
     </main>
   );

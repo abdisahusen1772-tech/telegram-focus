@@ -866,117 +866,124 @@ export interface TelegramJoinedDialog {
 /**
  * Retrieve user's joined Telegram dialogs (groups, channels, and 1-on-1 chats) to allow selectively adding them
  */
-export async function getMyTelegramDialogs(customSessionString?: string): Promise<TelegramJoinedDialog[]> {
+export async function getMyTelegramDialogs(customSessionString?: string): Promise<{
+  dialogs: TelegramJoinedDialog[];
+  notConnected?: boolean;
+}> {
   const isDemo = !customSessionString || customSessionString.startsWith('mock_') || customSessionString.startsWith('demo_');
 
   // If in sandbox mode, provide interactive sample groups and contacts to explore
   if (isDemo) {
-    return [
-      {
-        id: 'group-101',
-        title: 'Work Project Discussion',
-        isGroup: true,
-        isChannel: false,
-        isPrivate: true,
-        isUser: false,
-        unreadCount: 0,
-      },
-      {
-        id: 'group-102',
-        title: 'Family Chat',
-        isGroup: true,
-        isChannel: false,
-        isPrivate: true,
-        isUser: false,
-        unreadCount: 0,
-      },
-      {
-        id: 'channel-103',
-        title: 'Technology & AI News',
-        username: 'tech_ai_news',
-        isGroup: false,
-        isChannel: true,
-        isPrivate: false,
-        isUser: false,
-        unreadCount: 0,
-      },
-      {
-        id: 'user-201',
-        title: 'Abebe Kebede',
-        username: 'abebe_k',
-        isGroup: false,
-        isChannel: false,
-        isPrivate: false,
-        isUser: true,
-        unreadCount: 0,
-      },
-      {
-        id: 'user-202',
-        title: 'Sara Mohammed',
-        username: 'sara_m',
-        isGroup: false,
-        isChannel: false,
-        isPrivate: false,
-        isUser: true,
-        unreadCount: 0,
-      },
-    ];
+    return {
+      dialogs: [
+        {
+          id: 'group-101',
+          title: 'Work Project Discussion',
+          isGroup: true,
+          isChannel: false,
+          isPrivate: true,
+          isUser: false,
+          unreadCount: 0,
+        },
+        {
+          id: 'group-102',
+          title: 'Family Chat',
+          isGroup: true,
+          isChannel: false,
+          isPrivate: true,
+          isUser: false,
+          unreadCount: 0,
+        },
+        {
+          id: 'channel-103',
+          title: 'Technology & AI News',
+          username: 'tech_ai_news',
+          isGroup: false,
+          isChannel: true,
+          isPrivate: false,
+          isUser: false,
+          unreadCount: 0,
+        },
+        {
+          id: 'user-201',
+          title: 'Abebe Kebede',
+          username: 'abebe_k',
+          isGroup: false,
+          isChannel: false,
+          isPrivate: false,
+          isUser: true,
+          unreadCount: 0,
+        },
+        {
+          id: 'user-202',
+          title: 'Sara Mohammed',
+          username: 'sara_m',
+          isGroup: false,
+          isChannel: false,
+          isPrivate: false,
+          isUser: true,
+          unreadCount: 0,
+        },
+      ],
+      notConnected: false,
+    };
   }
 
   const client = await getOrInitTelegramClient(customSessionString);
-  if (client && client.connected) {
-    try {
-      const dialogs = await client.getDialogs({ limit: 150 });
-      const results: TelegramJoinedDialog[] = [];
-
-      for (const d of dialogs) {
-        const isChannel = Boolean(d.isChannel);
-        const isGroup = Boolean(d.isGroup);
-        const isUser = Boolean(d.isUser);
-
-        if (!isChannel && !isGroup && !isUser) continue;
-        if (d.id && d.id.toString() === '777000') continue; // Telegram service notices
-
-        const entity = d.entity as unknown as {
-          id?: { toString: () => string };
-          title?: string;
-          firstName?: string;
-          lastName?: string;
-          username?: string;
-          megagroup?: boolean;
-          broadcast?: boolean;
-        };
-
-        const idStr = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
-        if (!idStr) continue;
-
-        let title = d.title || entity?.title || '';
-        if (!title && isUser) {
-          title = `${entity?.firstName || ''} ${entity?.lastName || ''}`.trim() || 'Telegram Contact';
-        }
-
-        const username = entity?.username || undefined;
-        const isPrivate = !username;
-
-        results.push({
-          id: idStr,
-          title: title || (isUser ? 'Telegram User' : 'Telegram Chat'),
-          username,
-          isGroup: isGroup || Boolean(entity?.megagroup),
-          isChannel: isChannel && !entity?.megagroup,
-          isPrivate,
-          isUser,
-          unreadCount: d.unreadCount || 0,
-        });
-      }
-
-      return results;
-    } catch (err) {
-      console.warn('Telegram getDialogs error:', err);
-    }
+  if (!client || !client.connected) {
+    return { dialogs: [], notConnected: true };
   }
 
-  return [];
+  try {
+    const dialogs = await client.getDialogs({ limit: 150 });
+    const results: TelegramJoinedDialog[] = [];
+
+    for (const d of dialogs) {
+      const isChannel = Boolean(d.isChannel);
+      const isGroup = Boolean(d.isGroup);
+      const isUser = Boolean(d.isUser);
+
+      if (!isChannel && !isGroup && !isUser) continue;
+      if (d.id && d.id.toString() === '777000') continue; // Telegram service notices
+
+      const entity = d.entity as unknown as {
+        id?: { toString: () => string };
+        title?: string;
+        firstName?: string;
+        lastName?: string;
+        username?: string;
+        megagroup?: boolean;
+        broadcast?: boolean;
+      };
+
+      const idStr = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
+      if (!idStr) continue;
+
+      let title = d.title || entity?.title || '';
+      if (!title && isUser) {
+        title = `${entity?.firstName || ''} ${entity?.lastName || ''}`.trim() || 'Telegram Contact';
+      }
+
+      const username = entity?.username || undefined;
+      const isPrivate = !username;
+
+      results.push({
+        id: idStr,
+        title: title || (isUser ? 'Telegram User' : 'Telegram Chat'),
+        username,
+        isGroup: isGroup || Boolean(entity?.megagroup),
+        isChannel: isChannel && !entity?.megagroup,
+        isPrivate,
+        isUser,
+        unreadCount: d.unreadCount || 0,
+      });
+    }
+
+    return { dialogs: results, notConnected: false };
+  } catch (err) {
+    console.warn('Telegram getDialogs error:', err);
+    return { dialogs: [], notConnected: true };
+  }
 }
 
 /**

@@ -2,6 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { DatabaseSchema, UserSession, ApprovedContact, ApprovedChannel, Message, AppSettings } from './types';
+import bundledDbData from '../../data/focus_db.json';
+
+const DEFAULT_API_ID = '36393150';
+const DEFAULT_API_HASH = 'b08cd895004d8d1702eceab9e335dc06';
 
 // Bundled DB file in git repository (read-only in Vercel/serverless lambdas)
 const BUNDLED_DB_FILE = path.join(process.cwd(), 'data', 'focus_db.json');
@@ -71,24 +75,21 @@ export function getDb(): DatabaseSchema {
     }
 
     if (!initialDb) {
-      initialDb = {
-        session: {
-          userId: 'demo-user-12345',
-          firstName: 'Distraction-Free',
-          lastName: 'User',
-          username: 'focus_user',
-          phone: '+1 (555) 019-2834',
-          sessionString: 'demo_session_active',
-          isConnected: true,
-          isDemoMode: true,
-          connectedAt: new Date().toISOString(),
-          lastSyncedAt: new Date().toISOString(),
-        },
-        contacts: DEFAULT_CONTACTS,
-        channels: DEFAULT_CHANNELS,
-        messages: DEFAULT_MESSAGES,
-        settings: DEFAULT_SETTINGS,
-      };
+      try {
+        initialDb = JSON.parse(JSON.stringify(bundledDbData)) as DatabaseSchema;
+      } catch {
+        initialDb = {
+          session: null,
+          contacts: DEFAULT_CONTACTS,
+          channels: DEFAULT_CHANNELS,
+          messages: DEFAULT_MESSAGES,
+          settings: DEFAULT_SETTINGS,
+          apiCredentials: {
+            apiId: DEFAULT_API_ID,
+            apiHash: DEFAULT_API_HASH,
+          },
+        };
+      }
     }
 
     inMemoryDb = initialDb;
@@ -389,7 +390,7 @@ export function resetToDemoDatabase(): DatabaseSchema {
 }
 
 // Telegram API Credentials Helpers
-export function getApiCredentials(): { apiId: string; apiHash: string } | null {
+export function getApiCredentials(): { apiId: string; apiHash: string } {
   const db = getDb();
   if (db.apiCredentials && db.apiCredentials.apiId && db.apiCredentials.apiHash) {
     return db.apiCredentials;
@@ -400,7 +401,10 @@ export function getApiCredentials(): { apiId: string; apiHash: string } | null {
       apiHash: process.env.TELEGRAM_API_HASH.trim(),
     };
   }
-  return null;
+  return {
+    apiId: DEFAULT_API_ID,
+    apiHash: DEFAULT_API_HASH,
+  };
 }
 
 export function setApiCredentials(apiId: string, apiHash: string): void {

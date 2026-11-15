@@ -18,8 +18,8 @@ export function ConnectTelegramModal({
 }: ConnectTelegramModalProps) {
   const [step, setStep] = useState<'phone' | 'code' | '2fa'>('phone');
   const [phone, setPhone] = useState('');
-  const [apiId, setApiId] = useState('');
-  const [apiHash, setApiHash] = useState('');
+  const [apiId, setApiId] = useState('36393150');
+  const [apiHash, setApiHash] = useState('b08cd895004d8d1702eceab9e335dc06');
   const [code, setCode] = useState('');
   const [phoneCodeHash, setPhoneCodeHash] = useState('');
   const [intermediateSession, setIntermediateSession] = useState('');

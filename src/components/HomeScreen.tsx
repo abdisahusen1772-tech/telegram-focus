@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { Plus, Pin, Trash2, UserMinus, Radio, Users, Layers, ShieldCheck, Sparkles } from 'lucide-react';
-import { ApprovedContact, ApprovedChannel } from '@/lib/types';
+import { Plus, Pin, Trash2, UserMinus, Radio, Users, Layers, ShieldCheck, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ApprovedContact, ApprovedChannel, UserSession } from '@/lib/types';
 
 interface HomeScreenProps {
   channels: ApprovedChannel[];
@@ -20,6 +20,8 @@ interface HomeScreenProps {
   onOpenThemeModal?: () => void;
   onOpenStoryModal?: () => void;
   themeName?: string;
+  session?: UserSession | null;
+  onOpenConnectModal?: () => void;
 }
 
 export function HomeScreen({
@@ -37,6 +39,8 @@ export function HomeScreen({
   onOpenThemeModal,
   onOpenStoryModal,
   themeName,
+  session,
+  onOpenConnectModal,
 }: HomeScreenProps) {
   // Sort channels: Pinned first, then alphabetically
   const sortedChannels = [...channels].sort((a, b) => {
@@ -76,6 +80,28 @@ export function HomeScreen({
             <p className="text-[10px] font-mono tracking-[0.22em] uppercase text-sky-600 font-semibold mt-0.5">
               PLAN • FOCUS • ACHIEVE
             </p>
+
+            {/* Telegram Account Connection Indicator */}
+            {session && session.isConnected ? (
+              <div className="mt-2 inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-mono shadow-2xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="font-medium truncate max-w-[200px]">
+                  {session.firstName || session.phone || 'Telegram Account'}
+                </span>
+              </div>
+            ) : (
+              onOpenConnectModal && (
+                <div className="mt-2.5">
+                  <button
+                    onClick={onOpenConnectModal}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-1 rounded-full bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-medium transition shadow-xs cursor-pointer animate-pulse"
+                    title="Connect your Telegram phone number"
+                  >
+                    <span>⚡ Connect Telegram Account</span>
+                  </button>
+                </div>
+              )
+            )}
           </div>
 
           <div className="mt-3.5 flex items-center justify-center space-x-2 flex-wrap gap-y-1.5">

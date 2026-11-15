@@ -7,9 +7,10 @@ interface StoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
+  onOpenConnectModal?: () => void;
 }
 
-export function StoryModal({ isOpen, onClose, onSuccess }: StoryModalProps) {
+export function StoryModal({ isOpen, onClose, onSuccess, onOpenConnectModal }: StoryModalProps) {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [loading, setLoading] = useState(false);
@@ -118,9 +119,23 @@ export function StoryModal({ isOpen, onClose, onSuccess }: StoryModalProps) {
         </div>
 
         {error && (
-          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-start space-x-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>{error}</span>
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs space-y-2">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+            {(error.toLowerCase().includes('connect') || error.toLowerCase().includes('reconnect')) && onOpenConnectModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenConnectModal();
+                }}
+                className="w-full py-1.5 px-3 bg-red-700 hover:bg-red-800 text-white text-xs font-medium rounded-lg transition shadow-xs cursor-pointer flex items-center justify-center space-x-1"
+              >
+                <span>Connect Telegram Account →</span>
+              </button>
+            )}
           </div>
         )}
 

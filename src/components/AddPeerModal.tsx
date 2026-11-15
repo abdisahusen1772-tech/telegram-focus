@@ -334,19 +334,40 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
 
               if (filtered.length === 0) {
                 return (
-                  <div className="py-6 text-center text-xs text-stone-400 font-mono space-y-2">
+                  <div className="py-6 text-center text-xs text-stone-400 font-mono space-y-3">
                     <p>
                       {searchQuery
                         ? `No ${isContact ? 'contacts' : 'channels/groups'} found matching "${searchQuery}".`
                         : `No ${isContact ? 'individual contacts' : 'channels or groups'} found in your account.`}
                     </p>
-                    <button
-                      type="button"
-                      onClick={loadDialogs}
-                      className="text-[11px] font-mono text-stone-700 underline hover:text-black cursor-pointer"
-                    >
-                      ↻ Refresh Telegram Chats
-                    </button>
+                    <div className="flex flex-col items-center space-y-2">
+                      <button
+                        type="button"
+                        onClick={loadDialogs}
+                        className="text-[11px] font-mono text-stone-700 underline hover:text-black cursor-pointer"
+                      >
+                        ↻ Refresh Telegram Chats
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('username')}
+                        className="text-[11px] font-sans text-sky-600 hover:text-sky-700 font-medium cursor-pointer"
+                      >
+                        + Add by @Username instead
+                      </button>
+                      {onOpenConnectModal && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenConnectModal();
+                          }}
+                          className="mt-1 px-3 py-1 text-[11px] font-medium bg-stone-900 text-stone-50 hover:bg-stone-800 rounded-lg transition cursor-pointer shadow-xs"
+                        >
+                          ⚡ Connect / Reconnect Telegram Account
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               }

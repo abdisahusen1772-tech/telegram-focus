@@ -19,7 +19,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const dialogs = await getMyTelegramDialogs(session.sessionString);
+    const { dialogs, notConnected } = await getMyTelegramDialogs(session.sessionString);
+    if (notConnected) {
+      return NextResponse.json({
+        success: true,
+        notConnected: true,
+        error: 'Telegram account not connected or session expired. Please connect your Telegram account first.',
+        dialogs: [],
+      });
+    }
+
     const approvedChannels = getApprovedChannels();
     const approvedContacts = getApprovedContacts();
     const approvedChannelIds = new Set(
