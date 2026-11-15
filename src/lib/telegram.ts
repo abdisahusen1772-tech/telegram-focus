@@ -65,7 +65,6 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
         const client = new TelegramClient(stringSession, apiId, apiHash, {
           connectionRetries: 5,
           autoReconnect: true,
-          useWSS: false,
         });
 
         const connectPromise = client.connect();

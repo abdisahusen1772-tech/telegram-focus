@@ -299,25 +299,40 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
             </div>
 
             {isNotConnected ? (
-              <div className="py-6 px-3 text-center space-y-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <p className="text-xs font-semibold text-amber-900">
-                  Telegram Account Not Connected
-                </p>
-                <p className="text-[11px] text-amber-700 leading-relaxed font-sans">
-                  Please connect your Telegram account first to load and select from your actual chats.
-                </p>
-                {onOpenConnectModal && (
+              <div className="py-6 px-4 text-center space-y-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl">
+                <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 mx-auto flex items-center justify-center">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                    Telegram Account Not Connected Yet
+                  </p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed font-sans mt-1">
+                    To load and pick directly from your joined Telegram groups and channels, connect your account by entering your phone number and verification code.
+                  </p>
+                </div>
+
+                <div className="pt-2 flex flex-col space-y-2">
+                  {onOpenConnectModal && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenConnectModal();
+                      }}
+                      className="w-full py-2.5 px-3 text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition cursor-pointer shadow-sm flex items-center justify-center space-x-1"
+                    >
+                      <span>⚡ Connect Telegram Account →</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenConnectModal();
-                    }}
-                    className="px-3 py-1.5 text-xs font-medium bg-amber-900 text-white hover:bg-amber-800 rounded-lg transition cursor-pointer shadow-xs"
+                    onClick={() => setActiveTab('username')}
+                    className="w-full py-2 px-3 text-xs font-medium bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-300 dark:border-stone-700 rounded-lg transition cursor-pointer"
                   >
-                    Connect Telegram Account →
+                    + Or Add Directly by @Username (No Login Needed)
                   </button>
-                )}
+                </div>
               </div>
             ) : loadingDialogs ? (
               <div className="py-8 flex flex-col items-center justify-center text-xs text-stone-400 font-mono space-y-2">

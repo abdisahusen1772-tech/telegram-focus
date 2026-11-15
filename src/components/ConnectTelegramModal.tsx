@@ -23,6 +23,7 @@ export function ConnectTelegramModal({
   const [code, setCode] = useState('');
   const [phoneCodeHash, setPhoneCodeHash] = useState('');
   const [intermediateSession, setIntermediateSession] = useState('');
+  const [showApiKeys, setShowApiKeys] = useState(false);
   const [password2FA, setPassword2FA] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -198,55 +199,65 @@ export function ConnectTelegramModal({
 
         {step === 'phone' && (
           <form onSubmit={handleSendCode} className="mt-4 space-y-4">
-            {/* 1. Telegram API Credentials - ALWAYS VISIBLE */}
-            <div className="p-3.5 bg-white border border-stone-200 rounded-xl space-y-3 shadow-2xs">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-1.5 text-stone-900 font-semibold text-xs">
-                  <Key className="w-3.5 h-3.5 text-stone-600" />
-                  <span>1. Telegram API Credentials</span>
+            {/* Telegram MTProto API Status Banner / Config */}
+            {!showApiKeys ? (
+              <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200/80 rounded-xl text-emerald-800 text-xs shadow-2xs">
+                <div className="flex items-center space-x-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="font-medium">Telegram MTProto API Ready</span>
                 </div>
-                <a
-                  href="https://my.telegram.org"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] text-blue-600 hover:underline flex items-center space-x-0.5 font-mono"
+                <button
+                  type="button"
+                  onClick={() => setShowApiKeys(true)}
+                  className="text-[10px] text-stone-500 hover:text-stone-800 underline font-mono cursor-pointer"
                 >
-                  <span>my.telegram.org</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                  Edit API Keys
+                </button>
               </div>
-
-              <p className="text-[11px] text-stone-500 leading-relaxed font-sans">
-                Official MTProto access requires free credentials from <a href="https://my.telegram.org" target="_blank" rel="noreferrer" className="text-blue-600 underline font-medium">my.telegram.org</a> $\to$ <strong>API development tools</strong>. Enter them below:
-              </p>
-
-              <div className="space-y-2">
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-stone-600 mb-1">
-                    API ID (App api_id)
-                  </label>
-                  <input
-                    type="text"
-                    value={apiId}
-                    onChange={(e) => setApiId(e.target.value)}
-                    placeholder="e.g. 28475912"
-                    className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
-                  />
+            ) : (
+              <div className="p-3.5 bg-white border border-stone-200 rounded-xl space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 text-stone-900 font-semibold text-xs">
+                    <Key className="w-3.5 h-3.5 text-stone-600" />
+                    <span>Telegram API Credentials</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKeys(false)}
+                    className="text-[11px] text-stone-500 hover:underline font-mono"
+                  >
+                    Hide
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-mono uppercase text-stone-600 mb-1">
-                    API Hash (App api_hash)
-                  </label>
-                  <input
-                    type="text"
-                    value={apiHash}
-                    onChange={(e) => setApiHash(e.target.value)}
-                    placeholder="e.g. d3b07384d113edec49eaa6238ad5ff00"
-                    className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
-                  />
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-stone-600 mb-1">
+                      API ID (App api_id)
+                    </label>
+                    <input
+                      type="text"
+                      value={apiId}
+                      onChange={(e) => setApiId(e.target.value)}
+                      placeholder="e.g. 28475912"
+                      className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-mono uppercase text-stone-600 mb-1">
+                      API Hash (App api_hash)
+                    </label>
+                    <input
+                      type="text"
+                      value={apiHash}
+                      onChange={(e) => setApiHash(e.target.value)}
+                      placeholder="e.g. d3b07384d113edec49eaa6238ad5ff00"
+                      className="w-full px-3 py-2 text-xs bg-stone-50 border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* 2. Phone Number Entry */}
             <div className="p-3.5 bg-white border border-stone-200 rounded-xl space-y-2 shadow-2xs">
@@ -302,13 +313,18 @@ export function ConnectTelegramModal({
 
         {step === 'code' && (
           <form onSubmit={handleVerifyCode} className="mt-4 space-y-4">
-            <p className="text-xs text-stone-600 leading-relaxed font-sans">
-              Enter the 5-digit verification code sent to your Telegram app or via SMS.
-            </p>
+            <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl space-y-1 text-xs text-sky-900">
+              <p className="font-semibold flex items-center space-x-1.5">
+                <span>📩 Check your official Telegram app</span>
+              </p>
+              <p className="text-[11px] text-sky-700 leading-relaxed font-sans">
+                Telegram sends login codes directly inside your Telegram app (in the chat named <strong>Telegram</strong>) or via SMS.
+              </p>
+            </div>
 
             {statusNote && (
               <div className="p-2.5 bg-stone-100 border border-stone-200 rounded-lg text-stone-700 text-xs flex items-start space-x-2">
-                <CheckCircle className="w-4 h-4 text-stone-600 shrink-0 mt-0.5" />
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <span>{statusNote}</span>
               </div>
             )}
