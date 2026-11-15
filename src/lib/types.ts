@@ -61,6 +61,7 @@ export interface Message {
   media?: MessageMedia;
   replyToId?: string;
   replyToSnippet?: string;
+  topicId?: number;
 }
 
 export interface AppSettings {

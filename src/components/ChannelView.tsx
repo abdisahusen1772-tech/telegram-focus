@@ -1,14 +1,50 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock, FileText, Download, X, Paperclip, Camera, Image as ImageIcon, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Bell,
+  BellOff,
+  Radio,
+  ShieldCheck,
+  Clock,
+  Send,
+  Users,
+  Lock,
+  FileText,
+  Download,
+  X,
+  Paperclip,
+  Camera,
+  Image as ImageIcon,
+  RefreshCw,
+  Trash2,
+  Hash,
+  Pin,
+  CornerDownRight,
+  MessageSquare,
+  Layers,
+  Sparkles,
+} from 'lucide-react';
 import { ApprovedChannel, Message } from '@/lib/types';
+import { FormattedMessageText } from '@/components/FormattedMessageText';
 
 interface ChannelViewProps {
   channel: ApprovedChannel;
   onBack: () => void;
   onNotificationToggled?: (enabled: boolean) => void;
   onRemoveChannel?: (id: string) => void;
+}
+
+interface ForumTopic {
+  id: number;
+  title: string;
+  iconColor?: number;
+  iconEmojiId?: string;
+  unreadCount?: number;
+  pinned?: boolean;
+  closed?: boolean;
+  topMessageId?: number;
 }
 
 export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveChannel }: ChannelViewProps) {
@@ -19,6 +55,10 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [topics, setTopics] = useState<ForumTopic[]>([]);
+  const [isForum, setIsForum] = useState(false);
+  const [activeTopicId, setActiveTopicId] = useState<number | null>(null);
+  const [loadingTopics, setLoadingTopics] = useState(false);
   const [selectedMedia, setSelectedMedia] = useState<{
     type: 'image' | 'document';
     name: string;
@@ -68,6 +108,31 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
     return headers;
   };
 
+  // Fetch forum topics (sections) if the group supports them
+  const fetchForumTopics = async () => {
+    setLoadingTopics(true);
+    try {
+      const params = new URLSearchParams({
+        peerId: channel.id,
+        username: channel.username || '',
+      });
+      const res = await fetch(`/api/telegram/topics?${params.toString()}`, {
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.topics) && data.topics.length > 0) {
+        setIsForum(true);
+        setTopics(data.topics);
+      } else {
+        setIsForum(Boolean(data.isForum));
+      }
+    } catch (e) {
+      console.warn('Could not fetch forum topics:', e);
+    } finally {
+      setLoadingTopics(false);
+    }
+  };
+
   const fetchChannelPosts = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
@@ -76,6 +141,10 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         username: channel.username || '',
         title: channel.title || '',
       });
+      if (activeTopicId !== null) {
+        params.append('topicId', activeTopicId.toString());
+      }
+
       const res = await fetch(`/api/messages?${params.toString()}`, {
         headers: getAuthHeaders(),
       });
@@ -108,6 +177,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
           peerId: channel.id,
           text,
           media: selectedMedia || undefined,
+          topicId: activeTopicId || undefined,
         }),
       });
       const data = await res.json();
@@ -116,7 +186,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         setSelectedMedia(null);
         setPosts((prev) => [...prev, data.message]);
       } else {
-        alert(data.error || 'Failed to post: Administrator or Owner privileges are required to post to this channel.');
+        alert(data.error || 'Failed to post: Administrator or Owner privileges are required to post to this channel or topic.');
       }
     } catch (err) {
       console.error('Failed to send channel message:', err);
@@ -127,10 +197,14 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
   };
 
   useEffect(() => {
+    fetchForumTopics();
+  }, [channel.id]);
+
+  useEffect(() => {
     fetchChannelPosts();
     const interval = setInterval(() => fetchChannelPosts(false), 8000);
     return () => clearInterval(interval);
-  }, [channel.id]);
+  }, [channel.id, activeTopicId]);
 
   const toggleNotifications = async () => {
     const nextState = !notificationsOn;
@@ -165,10 +239,98 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
     }
   };
 
+  // Helper to render message text nicely with polls and forwards
+  const renderMessageContent = (text: string) => {
+    if (!text) return null;
+
+    let forwardAttribution: string | null = null;
+    let mainText = text;
+
+    // Check for forwarded message pattern
+    const fwdMatch = mainText.match(/^↪ Forwarded from ([^\n]+)\n([\s\S]*)$/);
+    if (fwdMatch) {
+      forwardAttribution = fwdMatch[1];
+      mainText = fwdMatch[2];
+    }
+
+    // Check for poll pattern
+    const isPoll = mainText.startsWith('📊 ');
+    if (isPoll) {
+      const lines = mainText.split('\n');
+      const question = lines[0].replace(/^📊\s*/, '');
+      const answers: string[] = [];
+      const remaining: string[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('• ')) {
+          answers.push(line.replace(/^•\s*/, ''));
+        } else if (line) {
+          remaining.push(line);
+        }
+      }
+
+      return (
+        <div className="space-y-3">
+          {forwardAttribution && (
+            <div className="flex items-center space-x-1.5 text-[11px] font-medium text-sky-600 bg-sky-50/80 border-l-2 border-sky-500 rounded-r-md px-2.5 py-1 mb-2">
+              <CornerDownRight className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+              <span>
+                Forwarded from <strong className="font-semibold text-sky-700">{forwardAttribution}</strong>
+              </span>
+            </div>
+          )}
+
+          <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 space-y-2.5">
+            <div className="flex items-center space-x-2 text-xs font-semibold text-stone-900">
+              <span className="text-base">📊</span>
+              <span>{question}</span>
+            </div>
+            {answers.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                {answers.map((ans, idx) => (
+                  <div
+                    key={idx}
+                    className="py-2 px-3 rounded-lg bg-white border border-stone-200/90 text-xs text-stone-800 font-medium flex items-center justify-between shadow-2xs hover:border-sky-400 hover:bg-sky-50/30 transition cursor-default"
+                  >
+                    <span className="truncate">{ans}</span>
+                    <span className="w-3.5 h-3.5 rounded-full border border-stone-300 shrink-0 ml-2"></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {remaining.length > 0 && (
+            <div className="text-xs text-stone-800 leading-relaxed pt-1">
+              <FormattedMessageText text={remaining.join('\n')} />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div>
+        {forwardAttribution && (
+          <div className="flex items-center space-x-1.5 text-[11px] font-medium text-sky-600 bg-sky-50/80 border-l-2 border-sky-500 rounded-r-md px-2.5 py-1 mb-2">
+            <CornerDownRight className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+            <span>
+              Forwarded from <strong className="font-semibold text-sky-700">{forwardAttribution}</strong>
+            </span>
+          </div>
+        )}
+        <FormattedMessageText text={mainText} />
+      </div>
+    );
+  };
+
+  const activeTopic = topics.find((t) => t.id === activeTopicId);
+
   return (
     <div className="flex flex-col h-full bg-stone-50 text-stone-900 select-text relative">
       {/* Channel Header */}
-      <div className="px-4 py-3 bg-white/90 backdrop-blur-xs border-b border-stone-200/90 flex items-center justify-between shrink-0 shadow-2xs">
+      <div className="px-4 py-3 bg-white/95 backdrop-blur-md border-b border-stone-200/90 flex items-center justify-between shrink-0 shadow-2xs">
         <div className="flex items-center space-x-3">
           <button
             onClick={onBack}
@@ -177,17 +339,22 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
           >
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
-          <div>
+          <div className="overflow-hidden">
             <div className="flex items-center space-x-1.5">
-              <h1 className="text-sm font-semibold tracking-tight text-stone-900">
+              <h1 className="text-sm font-semibold tracking-tight text-stone-900 truncate">
                 {channel.title}
               </h1>
               <span title="User-Approved Channel">
-                <ShieldCheck className="w-3.5 h-3.5 text-stone-400" />
+                <ShieldCheck className="w-3.5 h-3.5 text-stone-400 shrink-0" />
               </span>
             </div>
-            <p className="text-[11px] font-mono text-stone-400">
+            <p className="text-[11px] font-mono text-stone-400 truncate">
               @{channel.username}
+              {activeTopic && (
+                <span className="ml-1.5 text-sky-600 font-sans font-medium">
+                  • #{activeTopic.title}
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -243,11 +410,56 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         </div>
       </div>
 
-      {/* Distraction-Free Notification Guarantee Banner */}
-      <div className="bg-stone-100/80 border-b border-stone-200/70 px-4 py-2 text-[11px] text-stone-600 flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase text-stone-500">Live Telegram Feed</span>
+      {/* Forum Topics / Sections Bar (for Supergroups with Forum Topics enabled) */}
+      {(isForum || topics.length > 0) && (
+        <div className="bg-white border-b border-stone-200/90 px-3 py-2 flex items-center space-x-1.5 overflow-x-auto no-scrollbar shrink-0 shadow-2xs">
+          <div className="flex items-center space-x-1 text-[10px] font-mono text-stone-400 uppercase tracking-wider shrink-0 mr-1 pl-1">
+            <Layers className="w-3.5 h-3.5 text-sky-500" />
+            <span>Topics</span>
+          </div>
+
+          <button
+            onClick={() => setActiveTopicId(null)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer shrink-0 border ${
+              activeTopicId === null
+                ? 'bg-stone-900 text-stone-50 border-stone-900 shadow-2xs'
+                : 'bg-stone-100 text-stone-600 border-stone-200 hover:bg-stone-200'
+            }`}
+          >
+            All Posts
+          </button>
+
+          {topics.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTopicId(t.id)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition cursor-pointer shrink-0 flex items-center space-x-1.5 border ${
+                activeTopicId === t.id
+                  ? 'bg-sky-600 text-white border-sky-600 shadow-2xs'
+                  : 'bg-stone-100 text-stone-700 border-stone-200 hover:bg-stone-200'
+              }`}
+            >
+              {t.pinned && <Pin className="w-3 h-3 text-amber-500 shrink-0" />}
+              <span className="opacity-70 font-mono text-[11px]">#</span>
+              <span className="truncate max-w-[140px]">{t.title}</span>
+              {t.unreadCount && t.unreadCount > 0 ? (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[9px] bg-red-500 text-white font-bold">
+                  {t.unreadCount}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Live Telegram Feed Info */}
+      <div className="bg-stone-100/80 border-b border-stone-200/70 px-4 py-1.5 text-[11px] text-stone-600 flex items-center justify-between">
+        <span className="font-mono text-[10px] uppercase text-stone-500 flex items-center space-x-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span>Live Telegram Feed</span>
+        </span>
         <span className="font-mono text-stone-500 text-[10px]">
-          Direct from Telegram
+          {activeTopic ? `Topic: #${activeTopic.title}` : 'Direct from Telegram'}
         </span>
       </div>
 
@@ -263,7 +475,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         </div>
       )}
 
-      {/* Chronological Posts Stream (No Algorithms, No Likes, No Recommendations) */}
+      {/* Chronological Posts Stream */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {loading ? (
           <div className="h-full flex flex-col items-center justify-center text-xs text-stone-400 font-mono space-y-2">
@@ -273,7 +485,11 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         ) : posts.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-400 max-w-xs mx-auto space-y-3">
             <Radio className="w-8 h-8 text-stone-300 stroke-1 mx-auto" />
-            <p className="text-xs">No posts currently available in this channel.</p>
+            <p className="text-xs">
+              {activeTopic
+                ? `No posts currently available in topic #${activeTopic.title}.`
+                : 'No posts currently available in this channel.'}
+            </p>
             <button
               onClick={() => fetchChannelPosts(true)}
               className="text-[11px] font-mono text-stone-700 underline hover:text-black cursor-pointer"
@@ -285,22 +501,22 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
           posts.map((post) => (
             <article
               key={post.id}
-              className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-2.5 transition-all duration-150 hover:border-stone-300"
+              className="bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs space-y-3 transition-all duration-150 hover:border-stone-300"
             >
               <div className="flex items-center justify-between text-[11px] font-mono text-stone-400 border-b border-stone-100 pb-2">
-                <span className="font-medium text-stone-600">
-                  {channel.isGroup && post.senderName ? post.senderName : channel.title}
+                <span className="font-semibold text-stone-700 flex items-center space-x-1.5">
+                  <span>{channel.isGroup && post.senderName ? post.senderName : channel.title}</span>
                 </span>
-                <time>{formatDate(post.date)}</time>
+                <time className="text-stone-400">{formatDate(post.date)}</time>
               </div>
 
               {/* Render Media Image */}
               {post.media?.type === 'image' && (
-                <div className="overflow-hidden rounded-lg border border-stone-200/60 max-w-sm">
+                <div className="overflow-hidden rounded-xl border border-stone-200/60 max-w-md shadow-2xs">
                   <img
                     src={post.media.url}
                     alt={post.media.name || 'Channel image'}
-                    className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition"
+                    className="w-full max-h-80 object-cover rounded-xl cursor-pointer hover:opacity-95 transition"
                     onClick={() => setLightboxImg(post.media?.url || null)}
                   />
                 </div>
@@ -311,9 +527,9 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
                 <a
                   href={post.media.url}
                   download={post.media.name || 'document'}
-                  className="p-2.5 bg-stone-100/90 hover:bg-stone-200/80 rounded-lg border border-stone-200 text-stone-800 flex items-center space-x-2.5 transition"
+                  className="p-3 bg-stone-50 hover:bg-stone-100 rounded-xl border border-stone-200 text-stone-800 flex items-center space-x-3 transition shadow-2xs"
                 >
-                  <FileText className="w-5 h-5 text-stone-600 shrink-0" />
+                  <FileText className="w-5 h-5 text-sky-600 shrink-0" />
                   <div className="overflow-hidden flex-1">
                     <p className="font-mono text-[11px] truncate font-medium">
                       {post.media.name || 'Document.pdf'}
@@ -322,14 +538,14 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
                       <p className="text-[10px] text-stone-500 font-mono">{post.media.size}</p>
                     )}
                   </div>
-                  <Download className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                  <Download className="w-4 h-4 text-stone-400 shrink-0" />
                 </a>
               )}
 
-              {/* Text content */}
+              {/* Text content with Clickable Links and Polls */}
               {post.text && (
-                <div className="text-xs text-stone-800 leading-relaxed whitespace-pre-wrap font-sans">
-                  {post.text}
+                <div className="text-xs text-stone-800 leading-relaxed font-sans">
+                  {renderMessageContent(post.text)}
                 </div>
               )}
             </article>
@@ -337,7 +553,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         )}
       </div>
 
-      {/* Attachment Preview Chip for Groups */}
+      {/* Attachment Preview Chip */}
       {selectedMedia && (
         <div className="px-4 py-2 bg-stone-100/95 border-t border-stone-200 flex items-center justify-between text-xs">
           <div className="flex items-center space-x-2 overflow-hidden">
@@ -406,15 +622,27 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={channel.isGroup ? `Message group...` : `Broadcast post to ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`}
-          className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
+          placeholder={
+            activeTopic
+              ? `Message in #${activeTopic.title}...`
+              : channel.isGroup
+              ? `Message group...`
+              : `Broadcast post to ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`
+          }
+          className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
         />
 
         <button
           type="submit"
           disabled={(!inputText.trim() && !selectedMedia) || sending}
-          className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-lg transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
-          title={channel.isGroup ? "Send to group" : "Broadcast post to channel"}
+          className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-xl transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
+          title={
+            activeTopic
+              ? `Send to #${activeTopic.title}`
+              : channel.isGroup
+              ? 'Send to group'
+              : 'Broadcast post to channel'
+          }
         >
           <Send className="w-4 h-4 stroke-[2]" />
         </button>

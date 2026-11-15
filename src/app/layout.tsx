@@ -2,10 +2,15 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FOCUS — Distraction-Free Telegram",
+  title: "Telegram Focus — Plan • Focus • Achieve",
   description:
     "A minimalist communication layer over Telegram eliminating feeds, search engines, recommendations, and unnecessary social distraction.",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/app-icon.png",
+    shortcut: "/app-icon.png",
+    apple: "/apple-touch-icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

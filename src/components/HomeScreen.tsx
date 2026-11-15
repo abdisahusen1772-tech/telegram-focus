@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Plus, Pin, Trash2, UserMinus } from 'lucide-react';
+import { Plus, Pin, Trash2, UserMinus, Radio, Users, Layers, ShieldCheck, Sparkles } from 'lucide-react';
 import { ApprovedContact, ApprovedChannel } from '@/lib/types';
 
 interface HomeScreenProps {
@@ -57,27 +57,38 @@ export function HomeScreen({
   });
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6 max-w-md mx-auto w-full flex flex-col justify-between select-none">
+    <div className="flex-1 overflow-y-auto px-5 py-5 max-w-md mx-auto w-full flex flex-col justify-between select-none">
       <div>
-        {/* Brand & Focus Header */}
-        <header className="text-center pt-3 pb-8">
-          <div className="inline-block relative">
-            <h1 className="text-2xl font-light tracking-[0.35em] text-stone-900 font-mono pl-1">
-              FOCUS
+        {/* Brand & Focus Header with Official App Emblem */}
+        <header className="text-center pt-2 pb-6">
+          <div className="flex flex-col items-center">
+            <div className="relative group cursor-pointer">
+              <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 via-sky-400 to-blue-500 rounded-full blur-xs opacity-50 group-hover:opacity-80 transition duration-300"></div>
+              <img
+                src="/app-icon.png"
+                alt="Telegram Focus Emblem"
+                className="relative w-16 h-16 rounded-full object-cover border-2 border-cyan-400/80 shadow-md group-hover:scale-105 transition-transform duration-200"
+              />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight text-stone-900 mt-2.5">
+              Telegram Focus
             </h1>
+            <p className="text-[10px] font-mono tracking-[0.22em] uppercase text-sky-600 font-semibold mt-0.5">
+              PLAN • FOCUS • ACHIEVE
+            </p>
           </div>
 
-          <div className="mt-2.5 flex items-center justify-center space-x-2">
+          <div className="mt-3.5 flex items-center justify-center space-x-2 flex-wrap gap-y-1.5">
             <button
               onClick={onOpenFocusModal}
-              className={`text-[10px] font-mono tracking-widest px-3 py-1 rounded-full cursor-pointer transition-all duration-200 border flex items-center space-x-1.5 ${
+              className={`text-[10px] font-mono tracking-wider px-3 py-1 rounded-full cursor-pointer transition-all duration-200 border flex items-center space-x-1.5 shadow-2xs ${
                 focusMode
-                  ? 'bg-stone-900 text-stone-100 border-stone-900 hover:bg-stone-800 shadow-xs'
+                  ? 'bg-stone-900 text-stone-100 border-stone-900 hover:bg-stone-800'
                   : 'bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200'
               }`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${focusMode ? 'bg-emerald-400' : 'bg-stone-400'}`} />
-              <span>{focusMode ? 'FOCUS MODE ACTIVE' : 'STANDARD MODE'}</span>
+              <span className={`w-1.5 h-1.5 rounded-full ${focusMode ? 'bg-emerald-400 animate-pulse' : 'bg-stone-400'}`} />
+              <span>{focusMode ? 'FOCUS ACTIVE' : 'STANDARD'}</span>
             </button>
 
             {onOpenThemeModal && (
@@ -147,18 +158,26 @@ export function HomeScreen({
                   }`}
                   onClick={() => onSelectChannel(channel)}
                 >
-                  <div className="flex items-center space-x-2 truncate">
+                  <div className="flex items-center space-x-2.5 truncate">
                     {channel.isPinned && (
                       <span className="text-[10px] text-amber-600 font-mono shrink-0" title="Pinned to top">
                         📌
                       </span>
                     )}
-                    <span className="text-sm font-normal text-stone-900 tracking-tight group-hover:translate-x-0.5 transition-transform duration-150">
+                    <div className="w-6 h-6 rounded-md bg-stone-100 flex items-center justify-center text-stone-500 shrink-0">
+                      {channel.isGroup ? <Users className="w-3.5 h-3.5" /> : <Radio className="w-3.5 h-3.5" />}
+                    </div>
+                    <span className="text-sm font-medium text-stone-900 tracking-tight group-hover:translate-x-0.5 transition-transform duration-150 truncate">
                       {channel.title}
                     </span>
-                    {channel.isPrivate && (
+                    {channel.isGroup && (
+                      <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sky-50 text-sky-600 border border-sky-200 shrink-0">
+                        Topics
+                      </span>
+                    )}
+                    {channel.isPrivate && !channel.isGroup && (
                       <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-stone-100 text-stone-500 border border-stone-200 shrink-0">
-                        {channel.isGroup ? 'Group' : 'Private'}
+                        Private
                       </span>
                     )}
                   </div>
@@ -251,13 +270,16 @@ export function HomeScreen({
                     }`}
                     onClick={() => onSelectContact(contact)}
                   >
-                    <div className="flex items-center space-x-2 truncate">
+                    <div className="flex items-center space-x-2.5 truncate">
                       {contact.isPinned && (
                         <span className="text-[10px] text-amber-600 font-mono shrink-0" title="Pinned to top">
                           📌
                         </span>
                       )}
-                      <span className="text-sm font-normal text-stone-900 tracking-tight group-hover:translate-x-0.5 transition-transform duration-150">
+                      <div className="w-6 h-6 rounded-full bg-stone-200/80 text-stone-700 flex items-center justify-center text-xs font-semibold shrink-0 uppercase">
+                        {contact.firstName ? contact.firstName[0] : 'U'}
+                      </div>
+                      <span className="text-sm font-medium text-stone-900 tracking-tight group-hover:translate-x-0.5 transition-transform duration-150 truncate">
                         {contact.firstName} {contact.lastName || ''}
                       </span>
                     </div>

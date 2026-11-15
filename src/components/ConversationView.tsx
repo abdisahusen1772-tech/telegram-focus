@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw, Paperclip, Camera, Image as ImageIcon, Download, ExternalLink, UserMinus } from 'lucide-react';
 import { ApprovedContact, Message } from '@/lib/types';
+import { FormattedMessageText } from '@/components/FormattedMessageText';
 
 interface ConversationViewProps {
   contact: ApprovedContact;
@@ -250,19 +251,19 @@ export function ConversationView({ contact, onBack, onMessageSent, onRemoveConta
                 )}
 
                 <div
-                  className={`max-w-[85%] rounded-xl px-3.5 py-2.5 text-xs leading-relaxed relative shadow-2xs ${
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-xs leading-relaxed relative shadow-xs ${
                     isMe
-                      ? 'bg-stone-900 text-stone-50 border border-stone-800'
-                      : 'bg-white text-stone-900 border border-stone-200/90'
+                      ? 'bg-stone-900 text-stone-50 border border-stone-800 rounded-tr-xs'
+                      : 'bg-white text-stone-900 border border-stone-200/90 rounded-tl-xs'
                   }`}
                 >
                   {/* Media: Image */}
                   {msg.media?.type === 'image' && (
-                    <div className="mb-2 overflow-hidden rounded-lg border border-stone-200/60 max-w-sm">
+                    <div className="mb-2 overflow-hidden rounded-xl border border-stone-200/60 max-w-sm">
                       <img
                         src={msg.media.url}
                         alt={msg.media.name || 'Shared image'}
-                        className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition"
+                        className="w-full max-h-72 object-cover rounded-xl cursor-pointer hover:opacity-95 transition"
                         onClick={() => setLightboxImg(msg.media?.url || null)}
                       />
                     </div>
@@ -273,9 +274,9 @@ export function ConversationView({ contact, onBack, onMessageSent, onRemoveConta
                     <a
                       href={msg.media.url}
                       download={msg.media.name || 'document'}
-                      className="mb-2 p-2.5 bg-stone-100/90 hover:bg-stone-200/80 rounded-lg border border-stone-200 text-stone-800 flex items-center space-x-2.5 transition"
+                      className="mb-2 p-2.5 bg-stone-100/90 hover:bg-stone-200/80 rounded-xl border border-stone-200 text-stone-800 flex items-center space-x-2.5 transition shadow-2xs"
                     >
-                      <FileText className="w-5 h-5 text-stone-600 shrink-0" />
+                      <FileText className="w-5 h-5 text-sky-600 shrink-0" />
                       <div className="overflow-hidden flex-1">
                         <p className="font-mono text-[11px] truncate font-medium">
                           {msg.media.name || 'Document.pdf'}
@@ -290,7 +291,7 @@ export function ConversationView({ contact, onBack, onMessageSent, onRemoveConta
 
                   {/* Media: Voice message */}
                   {msg.media?.type === 'voice' && (
-                    <div className="mb-2 p-2.5 bg-stone-100/80 rounded-lg border border-stone-200 text-stone-800 flex items-center space-x-3">
+                    <div className="mb-2 p-2.5 bg-stone-100/80 rounded-xl border border-stone-200 text-stone-800 flex items-center space-x-3">
                       <button
                         onClick={() =>
                           setPlayingVoiceId(playingVoiceId === msg.id ? null : msg.id)
@@ -318,8 +319,19 @@ export function ConversationView({ contact, onBack, onMessageSent, onRemoveConta
                     </div>
                   )}
 
-                  {/* Message Text */}
-                  {msg.text && <p className="whitespace-pre-wrap">{msg.text}</p>}
+                  {/* Message Text with Clickable Links */}
+                  {msg.text && (
+                    <div className="text-xs leading-relaxed font-sans">
+                      <FormattedMessageText
+                        text={msg.text}
+                        linkClassName={
+                          isMe
+                            ? 'text-sky-300 hover:text-sky-200 underline underline-offset-2 break-all font-medium'
+                            : 'text-sky-600 hover:text-sky-500 underline underline-offset-2 break-all font-medium'
+                        }
+                      />
+                    </div>
+                  )}
 
                   {/* Message meta */}
                   <div

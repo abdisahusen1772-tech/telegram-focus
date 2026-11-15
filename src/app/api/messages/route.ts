@@ -14,6 +14,8 @@ export async function GET(req: NextRequest) {
     const peerId = searchParams.get('peerId');
     const queryUsername = (searchParams.get('username') || '').replace(/^@/, '').trim();
     const queryTitle = (searchParams.get('title') || '').trim();
+    const topicIdParam = searchParams.get('topicId');
+    const topicId = topicIdParam ? parseInt(topicIdParam, 10) : undefined;
 
     if (!peerId) {
       return NextResponse.json(
@@ -64,7 +66,7 @@ export async function GET(req: NextRequest) {
 
     if (session && !session.isDemoMode && session.isConnected && session.sessionString) {
       try {
-        const syncPromise = syncMessagesFromTelegram(syncId, syncUser, session.sessionString);
+        const syncPromise = syncMessagesFromTelegram(syncId, syncUser, session.sessionString, topicId);
         const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 20000));
         const syncedMessages = (await Promise.race([syncPromise, timeoutPromise])) as Message[];
         if (Array.isArray(syncedMessages) && syncedMessages.length > 0) {
@@ -118,7 +120,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { peerId, text, replyToId, replyToSnippet, media } = body;
+    const { peerId, text, replyToId, replyToSnippet, media, topicId } = body;
 
     const hasText = Boolean(text && typeof text === 'string' && text.trim() !== '');
     const hasMedia = Boolean(media && typeof media === 'object' && media.url);
@@ -147,13 +149,20 @@ export async function POST(req: NextRequest) {
       media: hasMedia ? media : undefined,
       replyToId,
       replyToSnippet,
+      topicId: topicId ? Number(topicId) : undefined,
     };
 
     // If connected to real Telegram, dispatch to recipient contact, channel, or group
     const targetIdentifier = targetContact?.username || targetContact?.id || targetChannel?.username || targetChannel?.id;
     if (session && !session.isDemoMode && targetIdentifier && session.sessionString) {
       try {
-        const sent = await sendTelegramMessage(targetIdentifier, (text || '').trim(), hasMedia ? media : undefined, session.sessionString);
+        const sent = await sendTelegramMessage(
+          targetIdentifier,
+          (text || '').trim(),
+          hasMedia ? media : undefined,
+          session.sessionString,
+          topicId ? Number(topicId) : undefined
+        );
         if (!sent) {
           throw new Error('Telegram server did not confirm dispatch');
         }

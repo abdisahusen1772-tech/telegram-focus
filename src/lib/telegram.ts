@@ -483,7 +483,8 @@ export async function sendTelegramMessage(
   peerUsername: string,
   text: string,
   media?: { type: 'image' | 'video' | 'voice' | 'document'; url: string; name?: string },
-  customSessionString?: string
+  customSessionString?: string,
+  topicId?: number
 ): Promise<boolean> {
   const client = await getOrInitTelegramClient(customSessionString);
   if (client && client.connected) {
@@ -556,6 +557,7 @@ export async function sendTelegramMessage(
             await client.sendFile(entity as any, {
               file: buffer,
               caption: text || (media.name ? `📎 ${media.name}` : undefined),
+              replyTo: topicId ? Number(topicId) : undefined,
               workers: 1,
             });
             return true;
@@ -567,6 +569,7 @@ export async function sendTelegramMessage(
 
       await client.sendMessage(entity as any, {
         message: text + (media?.name ? `\n[Attached: ${media.name}]` : ''),
+        replyTo: topicId ? Number(topicId) : undefined,
       });
       return true;
     } catch (err) {
@@ -580,7 +583,12 @@ export async function sendTelegramMessage(
 /**
  * Fetch live messages from real Telegram account for an approved contact or channel
  */
-export async function syncMessagesFromTelegram(peerId: string, peerUsername: string, customSessionString?: string): Promise<Message[]> {
+export async function syncMessagesFromTelegram(
+  peerId: string,
+  peerUsername: string,
+  customSessionString?: string,
+  topicId?: number
+): Promise<Message[]> {
   const isDemo = !customSessionString || customSessionString.startsWith('mock_') || customSessionString.startsWith('demo_');
   if (isDemo) {
     const cached = getPeerMessages(peerId);
@@ -594,7 +602,7 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
         senderId: peerId,
         senderName: peerUsername || 'Channel',
         isOutgoing: false,
-        text: 'Welcome to this channel. All posts, announcements, and media shared here are streamed directly to your focus view.',
+        text: 'Welcome to this channel. All posts, announcements, and media shared here are streamed directly to your focus view. Check out [Official Documentation](https://telegram.org) for more tips.',
         date: new Date(Date.now() - 3600000 * 3).toISOString(),
       },
       {
@@ -678,16 +686,21 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       }
     }
 
-    // 4. Fallback: try getMessages directly with username if entity could not be resolved via getEntity
+    // 4. Fetch messages (supports topic/forum filter via replyTo)
+    const getOptions: Record<string, any> = { limit: 50 };
+    if (topicId && Number(topicId) > 0) {
+      getOptions.replyTo = Number(topicId);
+    }
+
     let tgMessages: unknown[] = [];
     if (entity) {
-      tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], { limit: 50 });
+      tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], getOptions);
     } else if (rawUsername && !rawUsername.startsWith('user_') && !rawUsername.startsWith('private_')) {
       try {
-        tgMessages = await client.getMessages(rawUsername, { limit: 50 });
+        tgMessages = await client.getMessages(rawUsername, getOptions);
       } catch {
         try {
-          tgMessages = await client.getMessages(cleanUsername, { limit: 50 });
+          tgMessages = await client.getMessages(cleanUsername, getOptions);
         } catch (mErr) {
           console.warn('Direct username getMessages notice:', mErr);
         }
@@ -707,6 +720,21 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       let textContent = msgObj.message || msgObj.text || '';
       const mediaObj = msgObj.media;
       const fwdObj = msgObj.fwdFrom || msgObj.forward;
+
+      // Extract text links from Telegram entities (convert MessageEntityTextUrl into markdown [text](url))
+      const entities = msgObj.entities as Array<{ className?: string; offset: number; length: number; url?: string }> | undefined;
+      if (entities && Array.isArray(entities) && textContent) {
+        const textUrlEntities = entities
+          .filter(e => e.className === 'MessageEntityTextUrl' && e.url && typeof e.offset === 'number' && typeof e.length === 'number')
+          .sort((a, b) => b.offset - a.offset);
+
+        for (const ent of textUrlEntities) {
+          const before = textContent.slice(0, ent.offset);
+          const linkLabel = textContent.slice(ent.offset, ent.offset + ent.length);
+          const after = textContent.slice(ent.offset + ent.length);
+          textContent = `${before}[${linkLabel}](${ent.url})${after}`;
+        }
+      }
 
       // Extract poll / quiz questions and options (e.g. Ethiopian trivia quiz from user screenshot)
       if (mediaObj && (mediaObj.className === 'MessageMediaPoll' || mediaObj.poll)) {
@@ -1097,3 +1125,158 @@ export async function syncContactUnreadStatusFromTelegram(customSessionString?: 
     console.warn('Real telegram unread status sync notice:', err);
   }
 }
+
+export interface TelegramTopicItem {
+  id: number;
+  title: string;
+  iconColor?: number;
+  iconEmojiId?: string;
+  unreadCount?: number;
+  pinned?: boolean;
+  closed?: boolean;
+  topMessageId?: number;
+}
+
+/**
+ * Fetch sections / topics for supergroups with forum enabled
+ */
+export async function getTelegramForumTopics(
+  peerId: string,
+  peerUsername?: string,
+  customSessionString?: string
+): Promise<{ isForum: boolean; topics: TelegramTopicItem[] }> {
+  const isDemo = !customSessionString || customSessionString.startsWith('mock_') || customSessionString.startsWith('demo_');
+  if (isDemo) {
+    // Provide realistic topics for demo/testing mode
+    return {
+      isForum: true,
+      topics: [
+        { id: 1, title: 'General', pinned: true, unreadCount: 0 },
+        { id: 2, title: 'Announcements 📢', pinned: false, unreadCount: 1 },
+        { id: 3, title: 'Discussion 💬', pinned: false, unreadCount: 0 },
+        { id: 4, title: 'Resources & Links 🔗', pinned: false, unreadCount: 0 },
+      ],
+    };
+  }
+
+  const client = await getOrInitTelegramClient(customSessionString);
+  if (!client || !client.connected) {
+    return { isForum: false, topics: [] };
+  }
+
+  try {
+    const cleanRawId = peerId
+      .replace(/^channel-/, '')
+      .replace(/^contact-/, '')
+      .replace(/^-100/, '')
+      .replace(/^-/, '')
+      .trim()
+      .toLowerCase();
+    const cleanUsername = (peerUsername || '').replace(/^@/, '').trim().toLowerCase();
+
+    let entity: unknown = null;
+
+    // 1. Username lookup if available
+    if (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+      try {
+        entity = await client.getEntity(cleanUsername);
+      } catch {
+        // Fall through
+      }
+    }
+
+    // 2. Dialog search (reliable pre-resolved entity)
+    if (!entity) {
+      try {
+        const dialogs = await client.getDialogs({ limit: 120 });
+        const matched = dialogs.find((d) => {
+          const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
+          const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
+          const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+          const dUser = dEntity?.username?.toLowerCase();
+          return (
+            cleanDId === cleanRawId ||
+            (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
+          );
+        });
+        if (matched) {
+          entity = matched.inputEntity || matched.entity;
+        }
+      } catch (dErr) {
+        console.warn('Dialog search notice in getTelegramForumTopics:', dErr);
+      }
+    }
+
+    // 3. Fallback numeric ID lookup
+    if (!entity && cleanRawId) {
+      try {
+        entity = await client.getEntity(`-100${cleanRawId}`);
+      } catch {
+        try {
+          entity = await client.getEntity(cleanRawId);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (!entity) {
+      return { isForum: false, topics: [] };
+    }
+
+    // Query Telegram MTProto for Forum Topics
+    try {
+      const res = await client.invoke(
+        new Api.channels.GetForumTopics({
+          channel: entity as any,
+          offsetDate: 0,
+          offsetId: 0,
+          offsetTopic: 0,
+          limit: 100,
+        })
+      );
+
+      if (res && 'topics' in res && Array.isArray((res as any).topics)) {
+        const topicList = (res as any).topics;
+        const mappedTopics: TelegramTopicItem[] = topicList
+          .filter((t: any) => t && t.id !== undefined)
+          .map((t: any) => ({
+            id: Number(t.id),
+            title: t.title || (t.id === 1 ? 'General' : `Topic #${t.id}`),
+            iconColor: typeof t.iconColor === 'number' ? t.iconColor : undefined,
+            iconEmojiId: t.iconEmojiId ? t.iconEmojiId.toString() : undefined,
+            unreadCount: typeof t.unreadCount === 'number' ? t.unreadCount : 0,
+            pinned: Boolean(t.pinned),
+            closed: Boolean(t.closed),
+            topMessageId: typeof t.topMessage === 'number' ? t.topMessage : undefined,
+          }));
+
+        // Sort: pinned first, then by id
+        mappedTopics.sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          return a.id - b.id;
+        });
+
+        return { isForum: true, topics: mappedTopics };
+      }
+    } catch (forumErr: any) {
+      const msg = forumErr?.message || String(forumErr);
+      if (
+        msg.includes('CHANNEL_FORUM_MISSING') ||
+        msg.includes('CHAT_INVALID') ||
+        msg.includes('PEER_ID_INVALID') ||
+        msg.includes('FORUM_NOT_ALLOWED')
+      ) {
+        return { isForum: false, topics: [] };
+      }
+      console.warn('GetForumTopics invoke notice:', forumErr);
+    }
+
+    return { isForum: false, topics: [] };
+  } catch (err) {
+    console.error('Failed to get Telegram forum topics:', err);
+    return { isForum: false, topics: [] };
+  }
+}
+
