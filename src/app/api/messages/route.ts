@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPeerMessages, addMessageToPeer, markPeerAsRead, getApprovedContacts, getApprovedChannels, addApprovedChannel } from '@/lib/db';
-import { sendTelegramMessage, syncMessagesFromTelegram } from '@/lib/telegram';
+import {
+  getPeerMessages,
+  addMessageToPeer,
+  markPeerAsRead,
+  getApprovedContacts,
+  getApprovedChannels,
+  addApprovedChannel,
+  toggleMessageReaction,
+  togglePinMessage,
+  voteMessagePoll,
+} from '@/lib/db';
+import {
+  sendTelegramMessage,
+  syncMessagesFromTelegram,
+  reactToTelegramMessage,
+  pinTelegramMessage,
+} from '@/lib/telegram';
 import { Message, ApprovedChannel } from '@/lib/types';
 import { resolveSession } from '@/lib/session-helper';
 
@@ -120,14 +135,27 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { peerId, text, replyToId, replyToSnippet, media, topicId } = body;
+    const {
+      peerId,
+      text,
+      replyToId,
+      replyToSnippet,
+      media,
+      topicId,
+      silent,
+      expiresInSeconds,
+      scheduledFor,
+      poll,
+      forwardFrom,
+    } = body;
 
     const hasText = Boolean(text && typeof text === 'string' && text.trim() !== '');
     const hasMedia = Boolean(media && typeof media === 'object' && media.url);
+    const hasPoll = Boolean(poll && typeof poll === 'object' && poll.question);
 
-    if (!peerId || (!hasText && !hasMedia)) {
+    if (!peerId || (!hasText && !hasMedia && !hasPoll)) {
       return NextResponse.json(
-        { success: false, error: 'peerId and either text or media attachment are required' },
+        { success: false, error: 'peerId and either text, media, or poll are required' },
         { status: 400 }
       );
     }
@@ -138,8 +166,14 @@ export async function POST(req: NextRequest) {
     const channels = getApprovedChannels();
     const targetChannel = channels.find(ch => ch.id === peerId);
 
+    const now = Date.now();
+    let calculatedExpiresAt: string | undefined;
+    if (expiresInSeconds && Number(expiresInSeconds) > 0) {
+      calculatedExpiresAt = new Date(now + Number(expiresInSeconds) * 1000).toISOString();
+    }
+
     const newMessage: Message = {
-      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      id: `msg-${now}-${Math.random().toString(36).substr(2, 5)}`,
       peerId,
       senderId: session?.userId || 'user-self',
       senderName: session?.firstName || 'You',
@@ -150,18 +184,38 @@ export async function POST(req: NextRequest) {
       replyToId,
       replyToSnippet,
       topicId: topicId ? Number(topicId) : undefined,
+      isSilent: Boolean(silent),
+      expiresAt: calculatedExpiresAt,
+      scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : undefined,
+      forwardFrom: forwardFrom || undefined,
+      poll: hasPoll ? poll : undefined,
     };
 
     // If connected to real Telegram, dispatch to recipient contact, channel, or group
     const targetIdentifier = targetContact?.username || targetContact?.id || targetChannel?.username || targetChannel?.id;
     if (session && !session.isDemoMode && targetIdentifier && session.sessionString) {
       try {
+        let dispatchText = (text || '').trim();
+        if (hasPoll) {
+          const optLines = poll.options.map((o: any) => `• ${o.text}`).join('\n');
+          dispatchText = `📊 ${poll.question}\n${optLines}`;
+        }
+        if (forwardFrom) {
+          dispatchText = `↪ Forwarded from ${forwardFrom.name || 'Telegram'}\n${dispatchText}`;
+        }
+
+        const numericSchedule = scheduledFor ? Math.floor(new Date(scheduledFor).getTime() / 1000) : undefined;
         const sent = await sendTelegramMessage(
           targetIdentifier,
-          (text || '').trim(),
+          dispatchText,
           hasMedia ? media : undefined,
           session.sessionString,
-          topicId ? Number(topicId) : undefined
+          topicId ? Number(topicId) : undefined,
+          {
+            silent: Boolean(silent),
+            scheduleDate: numericSchedule,
+            replyToMsgId: replyToId ? parseInt(replyToId.replace(/[^\d]/g, ''), 10) || undefined : undefined,
+          }
         );
         if (!sent) {
           throw new Error('Telegram server did not confirm dispatch');
@@ -194,5 +248,95 @@ export async function POST(req: NextRequest) {
       { success: false, error: 'Failed to send message' },
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { action, messageId, emoji, optionIndex, targetPeerId, peerId, peerUsername } = body;
+
+    if (!messageId || !action) {
+      return NextResponse.json(
+        { success: false, error: 'messageId and action are required' },
+        { status: 400 }
+      );
+    }
+
+    const session = resolveSession(req);
+
+    if (action === 'react') {
+      if (!emoji || typeof emoji !== 'string') {
+        return NextResponse.json({ success: false, error: 'emoji is required' }, { status: 400 });
+      }
+      const updated = toggleMessageReaction(messageId, emoji);
+
+      // Attempt MTProto sync
+      if (session && !session.isDemoMode && session.sessionString && peerUsername) {
+        const numId = parseInt(messageId.replace(/[^\d]/g, ''), 10);
+        if (!isNaN(numId) && numId > 0) {
+          reactToTelegramMessage(peerUsername, numId, emoji, session.sessionString).catch(() => {});
+        }
+      }
+
+      return NextResponse.json({ success: true, message: updated });
+    }
+
+    if (action === 'pin') {
+      const updated = togglePinMessage(messageId);
+
+      // Attempt MTProto sync
+      if (session && !session.isDemoMode && session.sessionString && peerUsername) {
+        const numId = parseInt(messageId.replace(/[^\d]/g, ''), 10);
+        if (!isNaN(numId) && numId > 0 && updated) {
+          pinTelegramMessage(peerUsername, numId, !updated.isPinned, session.sessionString).catch(() => {});
+        }
+      }
+
+      return NextResponse.json({ success: true, message: updated });
+    }
+
+    if (action === 'vote') {
+      if (typeof optionIndex !== 'number') {
+        return NextResponse.json({ success: false, error: 'optionIndex must be a number' }, { status: 400 });
+      }
+      const updated = voteMessagePoll(messageId, optionIndex);
+      return NextResponse.json({ success: true, message: updated });
+    }
+
+    if (action === 'forward') {
+      if (!targetPeerId) {
+        return NextResponse.json({ success: false, error: 'targetPeerId is required' }, { status: 400 });
+      }
+      const db = (await import('@/lib/db')).getDb();
+      const origMsg = db.messages.find(m => m.id === messageId);
+      if (!origMsg) {
+        return NextResponse.json({ success: false, error: 'Original message not found' }, { status: 404 });
+      }
+
+      const fwdMessage: Message = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        peerId: targetPeerId,
+        senderId: session?.userId || 'user-self',
+        senderName: session?.firstName || 'You',
+        isOutgoing: true,
+        text: origMsg.text,
+        date: new Date().toISOString(),
+        media: origMsg.media,
+        forwardFrom: origMsg.forwardFrom || {
+          id: origMsg.senderId,
+          name: origMsg.senderName,
+          username: origMsg.peerUsername,
+        },
+      };
+
+      const saved = addMessageToPeer(fwdMessage);
+      return NextResponse.json({ success: true, message: saved });
+    }
+
+    return NextResponse.json({ success: false, error: 'Unknown action' }, { status: 400 });
+  } catch (error) {
+    console.error('Error updating message:', error);
+    return NextResponse.json({ success: false, error: 'Failed to update message' }, { status: 500 });
   }
 }

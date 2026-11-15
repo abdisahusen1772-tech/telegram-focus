@@ -6,12 +6,14 @@ interface FormattedMessageTextProps {
   text: string;
   className?: string;
   linkClassName?: string;
+  onHashtagClick?: (tag: string) => void;
 }
 
 export function FormattedMessageText({
   text,
   className = '',
   linkClassName = 'text-sky-500 hover:text-sky-400 underline underline-offset-2 break-all transition-colors duration-150 font-medium',
+  onHashtagClick,
 }: FormattedMessageTextProps) {
   if (!text) return null;
 
@@ -20,7 +22,8 @@ export function FormattedMessageText({
   // 2. HTTP/HTTPS URLs: https?://[^\s]+
   // 3. Telegram links: (?:https?:\/\/)?t\.me\/[a-zA-Z0-9_]+
   // 4. Usernames: @[a-zA-Z0-9_]{3,32}
-  const tokenRegex = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s]+|(?:^|\s)(?:t\.me\/[a-zA-Z0-9_+\-]+)|(?:^|\s)(?:@[a-zA-Z0-9_]{3,32}))/g;
+  // 5. Hashtags: #[a-zA-Z0-9_\u1200-\u137F]+
+  const tokenRegex = /(\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|https?:\/\/[^\s]+|(?:^|\s)(?:t\.me\/[a-zA-Z0-9_+\-]+)|(?:^|\s)(?:@[a-zA-Z0-9_]{3,32})|(?:^|\s)(?:#[a-zA-Z0-9_\u00C0-\u024F\u1200-\u137F]+))/g;
 
   // Split text into tokens while preserving delimiters
   const elements: React.ReactNode[] = [];
@@ -118,6 +121,26 @@ export function FormattedMessageText({
           >
             {trimmed}
           </a>
+        </React.Fragment>
+      );
+    } else if (matchString.includes('#')) {
+      // Hashtag
+      const leadSpace = matchString.startsWith(' ') ? ' ' : '';
+      const tag = matchString.trim();
+
+      elements.push(
+        <React.Fragment key={`hashtag-${matchStart}`}>
+          {leadSpace}
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onHashtagClick) onHashtagClick(tag);
+            }}
+            className="text-sky-500 hover:text-sky-400 font-semibold cursor-pointer underline underline-offset-2 decoration-sky-300/40 transition-colors duration-150 inline-block"
+            title={`Filter by ${tag}`}
+          >
+            {tag}
+          </span>
         </React.Fragment>
       );
     } else {

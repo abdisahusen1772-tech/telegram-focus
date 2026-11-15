@@ -25,15 +25,25 @@ import {
   MessageSquare,
   Layers,
   Sparkles,
+  Share2,
+  Smile,
+  Timer,
+  Calendar,
+  BarChart3,
+  Reply,
 } from 'lucide-react';
-import { ApprovedChannel, Message } from '@/lib/types';
+import { ApprovedChannel, ApprovedContact, Message, MessagePoll } from '@/lib/types';
 import { FormattedMessageText } from '@/components/FormattedMessageText';
+import { ForwardModal } from '@/components/ForwardModal';
+import { PollModal } from '@/components/PollModal';
 
 interface ChannelViewProps {
   channel: ApprovedChannel;
   onBack: () => void;
   onNotificationToggled?: (enabled: boolean) => void;
   onRemoveChannel?: (id: string) => void;
+  allContacts?: ApprovedContact[];
+  allChannels?: ApprovedChannel[];
 }
 
 interface ForumTopic {
@@ -47,9 +57,26 @@ interface ForumTopic {
   topMessageId?: number;
 }
 
-export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveChannel }: ChannelViewProps) {
+const QUICK_REACTIONS = ['👍', '❤️', '🔥', '😂', '👏', '🚀', '🎉'];
+const TTL_OPTIONS = [
+  { label: 'Off', seconds: 0 },
+  { label: '10s', seconds: 10 },
+  { label: '1m', seconds: 60 },
+  { label: '1h', seconds: 3600 },
+  { label: '24h', seconds: 86400 },
+];
+
+export function ChannelView({
+  channel,
+  onBack,
+  onNotificationToggled,
+  onRemoveChannel,
+  allContacts = [],
+  allChannels = [],
+}: ChannelViewProps) {
   const [posts, setPosts] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [sending, setSending] = useState(false);
   const [notificationsOn, setNotificationsOn] = useState(channel.notificationsEnabled);
   const [loading, setLoading] = useState(true);
@@ -59,6 +86,18 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
   const [isForum, setIsForum] = useState(false);
   const [activeTopicId, setActiveTopicId] = useState<number | null>(null);
   const [loadingTopics, setLoadingTopics] = useState(false);
+
+  // Advanced features state
+  const [isSilent, setIsSilent] = useState(false);
+  const [ttlSeconds, setTtlSeconds] = useState(0);
+  const [showTtlMenu, setShowTtlMenu] = useState(false);
+  const [showScheduleMenu, setShowScheduleMenu] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState<string>('');
+  const [activeReactionMsgId, setActiveReactionMsgId] = useState<string | null>(null);
+  const [messageToForward, setMessageToForward] = useState<Message | null>(null);
+  const [isPollModalOpen, setIsPollModalOpen] = useState(false);
+  const [activeHashtag, setActiveHashtag] = useState<string | null>(null);
+
   const [selectedMedia, setSelectedMedia] = useState<{
     type: 'image' | 'document';
     name: string;
@@ -68,6 +107,26 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Restore draft on channel open or topic switch
+  const draftKey = `draft_ch_${channel.id}_${activeTopicId || 'main'}`;
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const draft = localStorage.getItem(draftKey);
+      setInputText(draft || '');
+    }
+  }, [channel.id, activeTopicId]);
+
+  const handleInputChange = (val: string) => {
+    setInputText(val);
+    if (typeof window !== 'undefined') {
+      if (val.trim()) {
+        localStorage.setItem(draftKey, val);
+      } else {
+        localStorage.removeItem(draftKey);
+      }
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -92,9 +151,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
     if (typeof window === 'undefined') return {};
     const headers: Record<string, string> = {};
     const token = localStorage.getItem('tg_focus_session');
-    if (token) {
-      headers['x-telegram-session'] = token;
-    }
+    if (token) headers['x-telegram-session'] = token;
     const savedUser = localStorage.getItem('tg_focus_user');
     if (savedUser) {
       try {
@@ -108,7 +165,6 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
     return headers;
   };
 
-  // Fetch forum topics (sections) if the group supports them
   const fetchForumTopics = async () => {
     setLoadingTopics(true);
     try {
@@ -160,10 +216,10 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSendMessage = async (e?: React.FormEvent, pollData?: MessagePoll) => {
+    if (e) e.preventDefault();
     const text = inputText.trim();
-    if ((!text && !selectedMedia) || sending) return;
+    if ((!text && !selectedMedia && !pollData) || sending) return;
 
     setSending(true);
     try {
@@ -175,15 +231,27 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         },
         body: JSON.stringify({
           peerId: channel.id,
-          text,
+          text: pollData ? `📊 ${pollData.question}` : text,
           media: selectedMedia || undefined,
           topicId: activeTopicId || undefined,
+          replyToId: replyTo?.id,
+          replyToSnippet: replyTo ? `${replyTo.senderName}: ${replyTo.text.slice(0, 45)}...` : undefined,
+          silent: isSilent,
+          expiresInSeconds: ttlSeconds > 0 ? ttlSeconds : undefined,
+          scheduledFor: scheduledTime || undefined,
+          poll: pollData,
         }),
       });
       const data = await res.json();
       if (data.success) {
         setInputText('');
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(draftKey);
+        }
         setSelectedMedia(null);
+        setReplyTo(null);
+        setScheduledTime('');
+        setShowScheduleMenu(false);
         setPosts((prev) => [...prev, data.message]);
       } else {
         alert(data.error || 'Failed to post: Administrator or Owner privileges are required to post to this channel or topic.');
@@ -193,6 +261,102 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
       alert('Failed to send message to Telegram.');
     } finally {
       setSending(false);
+    }
+  };
+
+  // Reactions
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    setActiveReactionMsgId(null);
+    try {
+      setPosts((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId) return m;
+          const reactions = { ...(m.reactions || {}) };
+          let userReaction = m.userReaction;
+
+          if (userReaction === emoji) {
+            reactions[emoji] = Math.max(0, (reactions[emoji] || 1) - 1);
+            if (reactions[emoji] === 0) delete reactions[emoji];
+            userReaction = undefined;
+          } else {
+            if (userReaction && reactions[userReaction]) {
+              reactions[userReaction] = Math.max(0, reactions[userReaction] - 1);
+              if (reactions[userReaction] === 0) delete reactions[userReaction];
+            }
+            reactions[emoji] = (reactions[emoji] || 0) + 1;
+            userReaction = emoji;
+          }
+          return { ...m, reactions, userReaction };
+        })
+      );
+
+      await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          action: 'react',
+          messageId,
+          emoji,
+          peerId: channel.id,
+          peerUsername: channel.username,
+        }),
+      });
+    } catch (err) {
+      console.warn('Reaction error:', err);
+    }
+  };
+
+  // Pin post
+  const handleTogglePin = async (messageId: string) => {
+    try {
+      setPosts((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, isPinned: !m.isPinned } : m))
+      );
+
+      await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          action: 'pin',
+          messageId,
+          peerId: channel.id,
+          peerUsername: channel.username,
+        }),
+      });
+    } catch (err) {
+      console.warn('Pin error:', err);
+    }
+  };
+
+  // Vote on poll
+  const handleVotePoll = async (messageId: string, optionIndex: number) => {
+    try {
+      setPosts((prev) =>
+        prev.map((m) => {
+          if (m.id !== messageId || !m.poll || m.poll.isClosed) return m;
+          const poll = { ...m.poll };
+          const opts = poll.options.map((o, idx) => {
+            let votes = o.votes;
+            if (idx === optionIndex && poll.userVotedIndex !== optionIndex) votes += 1;
+            if (idx === poll.userVotedIndex && poll.userVotedIndex !== optionIndex) votes = Math.max(0, votes - 1);
+            return { ...o, votes };
+          });
+          const totalVotes = poll.userVotedIndex === undefined ? (poll.totalVotes || 0) + 1 : poll.totalVotes;
+          return { ...m, poll: { ...poll, options: opts, totalVotes, userVotedIndex: optionIndex } };
+        })
+      );
+
+      await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          action: 'vote',
+          messageId,
+          optionIndex,
+        }),
+      });
+    } catch (err) {
+      console.warn('Vote poll error:', err);
     }
   };
 
@@ -239,99 +403,18 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
     }
   };
 
-  // Helper to render message text nicely with polls and forwards
-  const renderMessageContent = (text: string) => {
-    if (!text) return null;
-
-    let forwardAttribution: string | null = null;
-    let mainText = text;
-
-    // Check for forwarded message pattern
-    const fwdMatch = mainText.match(/^↪ Forwarded from ([^\n]+)\n([\s\S]*)$/);
-    if (fwdMatch) {
-      forwardAttribution = fwdMatch[1];
-      mainText = fwdMatch[2];
-    }
-
-    // Check for poll pattern
-    const isPoll = mainText.startsWith('📊 ');
-    if (isPoll) {
-      const lines = mainText.split('\n');
-      const question = lines[0].replace(/^📊\s*/, '');
-      const answers: string[] = [];
-      const remaining: string[] = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line.startsWith('• ')) {
-          answers.push(line.replace(/^•\s*/, ''));
-        } else if (line) {
-          remaining.push(line);
-        }
-      }
-
-      return (
-        <div className="space-y-3">
-          {forwardAttribution && (
-            <div className="flex items-center space-x-1.5 text-[11px] font-medium text-sky-600 bg-sky-50/80 border-l-2 border-sky-500 rounded-r-md px-2.5 py-1 mb-2">
-              <CornerDownRight className="w-3.5 h-3.5 shrink-0 text-sky-500" />
-              <span>
-                Forwarded from <strong className="font-semibold text-sky-700">{forwardAttribution}</strong>
-              </span>
-            </div>
-          )}
-
-          <div className="p-3.5 bg-stone-50 rounded-xl border border-stone-200/80 space-y-2.5">
-            <div className="flex items-center space-x-2 text-xs font-semibold text-stone-900">
-              <span className="text-base">📊</span>
-              <span>{question}</span>
-            </div>
-            {answers.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                {answers.map((ans, idx) => (
-                  <div
-                    key={idx}
-                    className="py-2 px-3 rounded-lg bg-white border border-stone-200/90 text-xs text-stone-800 font-medium flex items-center justify-between shadow-2xs hover:border-sky-400 hover:bg-sky-50/30 transition cursor-default"
-                  >
-                    <span className="truncate">{ans}</span>
-                    <span className="w-3.5 h-3.5 rounded-full border border-stone-300 shrink-0 ml-2"></span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {remaining.length > 0 && (
-            <div className="text-xs text-stone-800 leading-relaxed pt-1">
-              <FormattedMessageText text={remaining.join('\n')} />
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div>
-        {forwardAttribution && (
-          <div className="flex items-center space-x-1.5 text-[11px] font-medium text-sky-600 bg-sky-50/80 border-l-2 border-sky-500 rounded-r-md px-2.5 py-1 mb-2">
-            <CornerDownRight className="w-3.5 h-3.5 shrink-0 text-sky-500" />
-            <span>
-              Forwarded from <strong className="font-semibold text-sky-700">{forwardAttribution}</strong>
-            </span>
-          </div>
-        )}
-        <FormattedMessageText text={mainText} />
-      </div>
-    );
-  };
-
   const activeTopic = topics.find((t) => t.id === activeTopicId);
+  const pinnedPost = posts.find((p) => p.isPinned);
+
+  const displayedPosts = activeHashtag
+    ? posts.filter((p) => p.text && p.text.toLowerCase().includes(activeHashtag.toLowerCase()))
+    : posts;
 
   return (
     <div className="flex flex-col h-full bg-stone-50 text-stone-900 select-text relative">
       {/* Channel Header */}
-      <div className="px-4 py-3 bg-white/95 backdrop-blur-md border-b border-stone-200/90 flex items-center justify-between shrink-0 shadow-2xs">
-        <div className="flex items-center space-x-3">
+      <div className="px-4 py-3 bg-white/95 backdrop-blur-md border-b border-stone-200/90 flex items-center justify-between shrink-0 shadow-2xs z-20">
+        <div className="flex items-center space-x-3 truncate">
           <button
             onClick={onBack}
             className="p-1.5 -ml-1 text-stone-600 hover:text-stone-950 rounded-lg hover:bg-stone-100 transition cursor-pointer"
@@ -339,27 +422,30 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
           >
             <ArrowLeft className="w-5 h-5 stroke-[2]" />
           </button>
-          <div className="overflow-hidden">
-            <div className="flex items-center space-x-1.5">
-              <h1 className="text-sm font-semibold tracking-tight text-stone-900 truncate">
-                {channel.title}
-              </h1>
-              <span title="User-Approved Channel">
-                <ShieldCheck className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-              </span>
+          <div className="flex items-center space-x-2.5 truncate">
+            <div className="w-8 h-8 rounded-xl bg-stone-100 text-stone-700 flex items-center justify-center shrink-0 shadow-2xs border border-stone-200">
+              {channel.isGroup ? <Users className="w-4 h-4 text-sky-600" /> : <Radio className="w-4 h-4 text-sky-600" />}
             </div>
-            <p className="text-[11px] font-mono text-stone-400 truncate">
-              @{channel.username}
-              {activeTopic && (
-                <span className="ml-1.5 text-sky-600 font-sans font-medium">
-                  • #{activeTopic.title}
-                </span>
-              )}
-            </p>
+            <div className="overflow-hidden">
+              <div className="flex items-center space-x-1.5">
+                <h1 className="text-sm font-semibold tracking-tight text-stone-900 truncate">
+                  {channel.title}
+                </h1>
+                <ShieldCheck className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+              </div>
+              <p className="text-[11px] font-mono text-stone-400 truncate">
+                @{channel.username || 'channel'}
+                {activeTopic && (
+                  <span className="ml-1.5 text-sky-600 font-sans font-medium">
+                    • #{activeTopic.title}
+                  </span>
+                )}
+              </p>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center space-x-1.5">
+        <div className="flex items-center space-x-1.5 shrink-0">
           {onRemoveChannel && (
             <button
               onClick={() => {
@@ -368,41 +454,38 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
                   onBack();
                 }
               }}
-              className="p-1.5 text-stone-400 hover:text-red-600 rounded-md hover:bg-stone-100 transition cursor-pointer flex items-center space-x-1"
-              title="Remove / Unadd channel"
+              className="p-1.5 text-stone-400 hover:text-red-600 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+              title="Remove channel"
             >
               <Trash2 className="w-4 h-4" />
-              <span className="text-[10px] font-mono hidden md:inline">Unadd</span>
             </button>
           )}
 
           <button
             onClick={() => fetchChannelPosts(true)}
             disabled={refreshing}
-            className="p-1.5 text-stone-400 hover:text-stone-700 rounded-md hover:bg-stone-100 transition cursor-pointer"
+            className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition cursor-pointer"
             title="Sync latest posts"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-700' : ''}`} />
           </button>
 
-          {/* Per-Channel Notification Toggle */}
           <button
             onClick={toggleNotifications}
-            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-mono transition-all duration-150 cursor-pointer border ${
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-mono transition-all duration-150 cursor-pointer border ${
               notificationsOn
                 ? 'bg-stone-900 text-stone-50 border-stone-900 hover:bg-stone-800'
                 : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200'
             }`}
-            title={notificationsOn ? 'Notifications Active' : 'Notifications Muted'}
           >
             {notificationsOn ? (
               <>
-                <Bell className="w-3.5 h-3.5 text-emerald-400" />
-                <span>NOTIFS ON</span>
+                <Bell className="w-3 h-3 text-emerald-400" />
+                <span>ON</span>
               </>
             ) : (
               <>
-                <BellOff className="w-3.5 h-3.5 text-stone-400" />
+                <BellOff className="w-3 h-3 text-stone-400" />
                 <span>MUTED</span>
               </>
             )}
@@ -410,9 +493,28 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         </div>
       </div>
 
-      {/* Forum Topics / Sections Bar (for Supergroups with Forum Topics enabled) */}
+      {/* Pinned Post Sticky Banner */}
+      {pinnedPost && (
+        <div className="bg-amber-50/90 border-b border-amber-200/80 px-4 py-2 flex items-center justify-between text-xs text-amber-900 z-10 shrink-0">
+          <div className="flex items-center space-x-2 truncate">
+            <Pin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span className="font-semibold text-[11px] text-amber-800 shrink-0">Pinned:</span>
+            <span className="truncate text-stone-700 font-sans text-xs">
+              {pinnedPost.text || pinnedPost.media?.name || 'Media'}
+            </span>
+          </div>
+          <button
+            onClick={() => handleTogglePin(pinnedPost.id)}
+            className="text-[10px] font-mono text-amber-700 hover:text-amber-950 underline shrink-0 ml-2 cursor-pointer"
+          >
+            Unpin
+          </button>
+        </div>
+      )}
+
+      {/* Forum Topics Bar */}
       {(isForum || topics.length > 0) && (
-        <div className="bg-white border-b border-stone-200/90 px-3 py-2 flex items-center space-x-1.5 overflow-x-auto no-scrollbar shrink-0 shadow-2xs">
+        <div className="bg-white border-b border-stone-200/90 px-3 py-2 flex items-center space-x-1.5 overflow-x-auto no-scrollbar shrink-0 shadow-2xs z-10">
           <div className="flex items-center space-x-1 text-[10px] font-mono text-stone-400 uppercase tracking-wider shrink-0 mr-1 pl-1">
             <Layers className="w-3.5 h-3.5 text-sky-500" />
             <span>Topics</span>
@@ -452,42 +554,38 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
         </div>
       )}
 
-      {/* Live Telegram Feed Info */}
-      <div className="bg-stone-100/80 border-b border-stone-200/70 px-4 py-1.5 text-[11px] text-stone-600 flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase text-stone-500 flex items-center space-x-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Live Telegram Feed</span>
-        </span>
-        <span className="font-mono text-stone-500 text-[10px]">
-          {activeTopic ? `Topic: #${activeTopic.title}` : 'Direct from Telegram'}
-        </span>
-      </div>
-
-      {/* About Box if provided and contains genuine description */}
-      {channel.about &&
-        channel.about.trim() !== `@${channel.username}` &&
-        channel.about.trim() !== channel.username &&
-        !channel.about.toLowerCase().includes('private telegram') &&
-        !channel.about.toLowerCase().includes('telegram channel') &&
-        !channel.about.toLowerCase().includes('telegram group') && (
-        <div className="px-4 py-2 bg-white/70 border-b border-stone-200/80 text-xs text-stone-600 leading-relaxed font-sans">
-          {channel.about}
+      {/* Active Hashtag Filter Pill */}
+      {activeHashtag && (
+        <div className="bg-sky-50 border-b border-sky-200 px-4 py-1.5 flex items-center justify-between text-xs text-sky-900 z-10 shrink-0">
+          <div className="flex items-center space-x-1.5 font-mono text-[11px]">
+            <Hash className="w-3.5 h-3.5 text-sky-600" />
+            <span>Filtering by <strong className="font-semibold">{activeHashtag}</strong></span>
+          </div>
+          <button
+            onClick={() => setActiveHashtag(null)}
+            className="p-0.5 rounded text-sky-600 hover:text-sky-950 cursor-pointer"
+            title="Clear filter"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
-      {/* Chronological Posts Stream */}
+      {/* Posts Stream */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {loading ? (
           <div className="h-full flex flex-col items-center justify-center text-xs text-stone-400 font-mono space-y-2">
             <Clock className="w-4 h-4 animate-spin text-stone-400" />
             <span>Loading verified dispatches...</span>
           </div>
-        ) : posts.length === 0 ? (
+        ) : displayedPosts.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-400 max-w-xs mx-auto space-y-3">
             <Radio className="w-8 h-8 text-stone-300 stroke-1 mx-auto" />
             <p className="text-xs">
-              {activeTopic
-                ? `No posts currently available in topic #${activeTopic.title}.`
+              {activeHashtag
+                ? `No posts matching ${activeHashtag}`
+                : activeTopic
+                ? `No posts in topic #${activeTopic.title}.`
                 : 'No posts currently available in this channel.'}
             </p>
             <button
@@ -498,157 +596,491 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
             </button>
           </div>
         ) : (
-          posts.map((post) => (
-            <article
-              key={post.id}
-              className="bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs space-y-3 transition-all duration-150 hover:border-stone-300"
-            >
-              <div className="flex items-center justify-between text-[11px] font-mono text-stone-400 border-b border-stone-100 pb-2">
-                <span className="font-semibold text-stone-700 flex items-center space-x-1.5">
-                  <span>{channel.isGroup && post.senderName ? post.senderName : channel.title}</span>
-                </span>
-                <time className="text-stone-400">{formatDate(post.date)}</time>
-              </div>
+          displayedPosts.map((post) => {
+            const hasReactions = post.reactions && Object.keys(post.reactions).length > 0;
 
-              {/* Render Media Image */}
-              {post.media?.type === 'image' && (
-                <div className="overflow-hidden rounded-xl border border-stone-200/60 max-w-md shadow-2xs">
-                  <img
-                    src={post.media.url}
-                    alt={post.media.name || 'Channel image'}
-                    className="w-full max-h-80 object-cover rounded-xl cursor-pointer hover:opacity-95 transition"
-                    onClick={() => setLightboxImg(post.media?.url || null)}
-                  />
-                </div>
-              )}
-
-              {/* Render Media Document */}
-              {post.media?.type === 'document' && (
-                <a
-                  href={post.media.url}
-                  download={post.media.name || 'document'}
-                  className="p-3 bg-stone-50 hover:bg-stone-100 rounded-xl border border-stone-200 text-stone-800 flex items-center space-x-3 transition shadow-2xs"
-                >
-                  <FileText className="w-5 h-5 text-sky-600 shrink-0" />
-                  <div className="overflow-hidden flex-1">
-                    <p className="font-mono text-[11px] truncate font-medium">
-                      {post.media.name || 'Document.pdf'}
-                    </p>
-                    {post.media.size && (
-                      <p className="text-[10px] text-stone-500 font-mono">{post.media.size}</p>
-                    )}
+            return (
+              <article
+                key={post.id}
+                className="bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs space-y-3 transition-all duration-150 hover:border-stone-300 group relative"
+              >
+                {/* Post Header: Sender, Pinned, Date */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-stone-400 border-b border-stone-100 pb-2">
+                  <div className="flex items-center space-x-1.5 truncate">
+                    {post.isPinned && <Pin className="w-3 h-3 text-amber-500 fill-amber-500" />}
+                    <span className="font-semibold text-stone-700 truncate">
+                      {channel.isGroup && post.senderName ? post.senderName : channel.title}
+                    </span>
                   </div>
-                  <Download className="w-4 h-4 text-stone-400 shrink-0" />
-                </a>
-              )}
-
-              {/* Text content with Clickable Links and Polls */}
-              {post.text && (
-                <div className="text-xs text-stone-800 leading-relaxed font-sans">
-                  {renderMessageContent(post.text)}
+                  <div className="flex items-center space-x-1.5 text-stone-400 shrink-0">
+                    {post.isSilent && <span title="Silent post"><BellOff className="w-3 h-3" /></span>}
+                    <time>{formatDate(post.date)}</time>
+                  </div>
                 </div>
-              )}
-            </article>
-          ))
+
+                {/* Reply To snippet */}
+                {post.replyToSnippet && (
+                  <div className="text-[10px] font-mono px-2.5 py-1 rounded-md bg-stone-50 border border-stone-200 text-stone-600 flex items-center space-x-1">
+                    <CornerDownRight className="w-3 h-3 text-sky-500 shrink-0" />
+                    <span className="truncate max-w-[240px]">{post.replyToSnippet}</span>
+                  </div>
+                )}
+
+                {/* Forward attribution banner */}
+                {post.forwardFrom && (
+                  <div className="flex items-center space-x-1.5 text-[11px] font-medium text-sky-600 bg-sky-50/80 border-l-2 border-sky-500 rounded-r-md px-2.5 py-1">
+                    <Share2 className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+                    <span>Forwarded from <strong>{post.forwardFrom.name}</strong></span>
+                  </div>
+                )}
+
+                {/* Render Media Image */}
+                {post.media?.type === 'image' && (
+                  <div className="overflow-hidden rounded-xl border border-stone-200/60 max-w-md shadow-2xs">
+                    <img
+                      src={post.media.url}
+                      alt={post.media.name || 'Channel image'}
+                      className="w-full max-h-80 object-cover rounded-xl cursor-pointer hover:opacity-95 transition"
+                      onClick={() => setLightboxImg(post.media?.url || null)}
+                    />
+                  </div>
+                )}
+
+                {/* Render Media Document */}
+                {post.media?.type === 'document' && (
+                  <a
+                    href={post.media.url}
+                    download={post.media.name || 'document'}
+                    className="p-3 bg-stone-50 hover:bg-stone-100 rounded-xl border border-stone-200 text-stone-800 flex items-center space-x-3 transition shadow-2xs"
+                  >
+                    <FileText className="w-5 h-5 text-sky-600 shrink-0" />
+                    <div className="overflow-hidden flex-1">
+                      <p className="font-mono text-[11px] truncate font-medium">
+                        {post.media.name || 'Document.pdf'}
+                      </p>
+                      {post.media.size && (
+                        <p className="text-[10px] text-stone-500 font-mono">{post.media.size}</p>
+                      )}
+                    </div>
+                    <Download className="w-4 h-4 text-stone-400 shrink-0" />
+                  </a>
+                )}
+
+                {/* Poll rendering if present */}
+                {post.poll && (
+                  <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-xs flex items-center space-x-1">
+                        <span>📊 {post.poll.question}</span>
+                      </span>
+                      {post.poll.isQuiz && (
+                        <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">
+                          QUIZ
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1.5 pt-1">
+                      {post.poll.options.map((opt, idx) => {
+                        const isSelected = post.poll?.userVotedIndex === idx;
+                        const percent =
+                          post.poll?.totalVotes && post.poll.totalVotes > 0
+                            ? Math.round((opt.votes / post.poll.totalVotes) * 100)
+                            : 0;
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => handleVotePoll(post.id, idx)}
+                            className={`w-full p-2.5 rounded-xl text-left text-xs font-medium border transition relative overflow-hidden flex items-center justify-between cursor-pointer ${
+                              isSelected
+                                ? 'border-sky-500 bg-sky-50/60 text-sky-900'
+                                : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-800'
+                            }`}
+                          >
+                            <div
+                              className="absolute left-0 top-0 bottom-0 bg-sky-100/50 transition-all duration-300"
+                              style={{ width: `${percent}%` }}
+                            />
+                            <span className="relative z-10 flex items-center space-x-2 truncate">
+                              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${isSelected ? 'bg-sky-600 border-sky-600 text-white' : 'border-stone-300'}`}>
+                                {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </span>
+                              <span className="truncate">{opt.text}</span>
+                            </span>
+                            <span className="relative z-10 font-mono text-[10px] text-stone-500 shrink-0 ml-2">
+                              {percent}%
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[10px] font-mono text-stone-500 pt-1 flex items-center justify-between">
+                      <span>{post.poll.totalVotes || 0} votes</span>
+                      {post.poll.explanation && post.poll.userVotedIndex !== undefined && (
+                        <span className="text-emerald-700 italic">💡 {post.poll.explanation}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Text content with Clickable Links and Hashtags */}
+                {post.text && (
+                  <div className="text-xs text-stone-800 leading-relaxed font-sans">
+                    <FormattedMessageText
+                      text={post.text}
+                      onHashtagClick={(tag) => setActiveHashtag(tag)}
+                    />
+                  </div>
+                )}
+
+                {/* Reaction Badges */}
+                {hasReactions && (
+                  <div className="flex items-center space-x-1 pt-1">
+                    {Object.entries(post.reactions!).map(([emoji, count]) => {
+                      const isMyReaction = post.userReaction === emoji;
+                      return (
+                        <button
+                          key={emoji}
+                          onClick={() => handleToggleReaction(post.id, emoji)}
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-sans border transition cursor-pointer flex items-center space-x-1 shadow-2xs ${
+                            isMyReaction
+                              ? 'bg-sky-100 border-sky-300 text-sky-900 font-semibold'
+                              : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                          }`}
+                        >
+                          <span>{emoji}</span>
+                          <span className="text-[10px] font-mono">{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Floating Action Menu Capsule */}
+                <div className="flex items-center space-x-1 pt-1 border-t border-stone-100 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                  <button
+                    onClick={() => setReplyTo(post)}
+                    className="p-1 rounded-md text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition cursor-pointer flex items-center space-x-1 text-[11px]"
+                    title="Reply"
+                  >
+                    <Reply className="w-3.5 h-3.5" />
+                    <span>Reply</span>
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      setActiveReactionMsgId(activeReactionMsgId === post.id ? null : post.id)
+                    }
+                    className="p-1 rounded-md text-stone-400 hover:text-amber-500 hover:bg-stone-100 transition cursor-pointer flex items-center space-x-1 text-[11px]"
+                    title="React"
+                  >
+                    <Smile className="w-3.5 h-3.5" />
+                    <span>React</span>
+                  </button>
+
+                  <button
+                    onClick={() => setMessageToForward(post)}
+                    className="p-1 rounded-md text-stone-400 hover:text-sky-600 hover:bg-stone-100 transition cursor-pointer flex items-center space-x-1 text-[11px]"
+                    title="Forward"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>Forward</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleTogglePin(post.id)}
+                    className={`p-1 rounded-md transition cursor-pointer flex items-center space-x-1 text-[11px] ${
+                      post.isPinned ? 'text-amber-600' : 'text-stone-400 hover:text-stone-800 hover:bg-stone-100'
+                    }`}
+                    title={post.isPinned ? 'Unpin' : 'Pin to top'}
+                  >
+                    <Pin className={`w-3.5 h-3.5 ${post.isPinned ? 'fill-amber-600' : ''}`} />
+                    <span>{post.isPinned ? 'Unpin' : 'Pin'}</span>
+                  </button>
+                </div>
+
+                {/* Floating Quick Reaction Bar */}
+                {activeReactionMsgId === post.id && (
+                  <div className="absolute z-30 bottom-10 left-4 bg-white/95 backdrop-blur-md border border-stone-200 rounded-full px-2 py-1 shadow-lg flex items-center space-x-1.5 animate-in zoom-in-95 duration-100">
+                    {QUICK_REACTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => handleToggleReaction(post.id, emoji)}
+                        className="hover:scale-125 transition-transform duration-100 text-sm p-0.5 cursor-pointer"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setActiveReactionMsgId(null)}
+                      className="p-0.5 text-stone-400 hover:text-stone-700 ml-1"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })
         )}
       </div>
 
-      {/* Attachment Preview Chip */}
-      {selectedMedia && (
-        <div className="px-4 py-2 bg-stone-100/95 border-t border-stone-200 flex items-center justify-between text-xs">
-          <div className="flex items-center space-x-2 overflow-hidden">
-            {selectedMedia.type === 'image' ? (
-              <ImageIcon className="w-4 h-4 text-emerald-600 shrink-0" />
-            ) : (
-              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-            )}
+      {/* Reply Snippet Preview Above Composer */}
+      {replyTo && (
+        <div className="px-4 py-2 bg-stone-100 border-t border-stone-200 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2 truncate">
+            <CornerDownRight className="w-3.5 h-3.5 text-sky-600 shrink-0" />
             <div className="truncate">
-              <span className="font-semibold text-stone-800">{selectedMedia.name} </span>
-              <span className="text-stone-500 font-mono text-[10px]">({selectedMedia.size})</span>
+              <span className="font-semibold text-stone-800">{replyTo.senderName}: </span>
+              <span className="text-stone-500 font-sans">{replyTo.text || 'Attachment'}</span>
             </div>
           </div>
           <button
-            type="button"
-            onClick={() => setSelectedMedia(null)}
+            onClick={() => setReplyTo(null)}
             className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
-            title="Remove attachment"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* Post Composer for Channels & Groups (Owner & Admin can broadcast like in official Telegram app) */}
+      {/* Selected Media Chip */}
+      {selectedMedia && (
+        <div className="px-4 py-2 bg-stone-100 border-t border-stone-200 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2 truncate">
+            {selectedMedia.type === 'image' ? (
+              <ImageIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+            )}
+            <span className="font-medium text-stone-800 truncate">{selectedMedia.name}</span>
+          </div>
+          <button
+            onClick={() => setSelectedMedia(null)}
+            className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Scheduled message indicator */}
+      {scheduledTime && (
+        <div className="px-4 py-1.5 bg-sky-50 border-t border-sky-200 flex items-center justify-between text-[11px] text-sky-900">
+          <span className="flex items-center space-x-1.5">
+            <Calendar className="w-3.5 h-3.5 text-sky-600" />
+            <span>Scheduled for {new Date(scheduledTime).toLocaleString()}</span>
+          </span>
+          <button onClick={() => setScheduledTime('')} className="p-0.5 hover:text-sky-950">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Post Composer for Channels & Groups */}
       <form
-        onSubmit={handleSendMessage}
-        className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-1.5 shrink-0"
+        onSubmit={(e) => handleSendMessage(e)}
+        className="p-3 bg-white border-t border-stone-200/90 flex flex-col space-y-2 shrink-0 z-10"
       >
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileSelect}
-          accept="image/*,.pdf,.doc,.docx,.txt,.zip"
-          className="hidden"
-        />
+        <div className="flex items-center space-x-1.5">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            accept="image/*,.pdf,.doc,.docx,.txt"
+            className="hidden"
+          />
+          <input
+            type="file"
+            ref={cameraInputRef}
+            onChange={handleFileSelect}
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+          />
 
-        <input
-          type="file"
-          ref={cameraInputRef}
-          onChange={handleFileSelect}
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-        />
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="p-2 text-stone-500 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition cursor-pointer"
+            title="Camera"
+          >
+            <Camera className="w-4 h-4 stroke-[2]" />
+          </button>
 
-        <button
-          type="button"
-          onClick={() => cameraInputRef.current?.click()}
-          className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
-          title="Take photo with camera"
-        >
-          <Camera className="w-4 h-4 stroke-[2]" />
-        </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 text-stone-500 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition cursor-pointer"
+            title="Attach file"
+          >
+            <Paperclip className="w-4 h-4 stroke-[2]" />
+          </button>
 
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
-          title="Attach file or photo"
-        >
-          <Paperclip className="w-4 h-4 stroke-[2]" />
-        </button>
+          {/* Silent Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsSilent(!isSilent)}
+            className={`p-2 rounded-xl transition cursor-pointer ${
+              isSilent
+                ? 'bg-sky-100 text-sky-700 shadow-2xs font-semibold'
+                : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
+            }`}
+            title={isSilent ? 'Silent Mode On (No sound on member phones)' : 'Silent Mode Off'}
+          >
+            {isSilent ? <BellOff className="w-4 h-4 text-sky-600" /> : <Bell className="w-4 h-4" />}
+          </button>
 
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder={
-            activeTopic
-              ? `Message in #${activeTopic.title}...`
-              : channel.isGroup
-              ? `Message group...`
-              : `Broadcast post to ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`
-          }
-          className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
-        />
+          {/* Self-Destruct Timer Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowTtlMenu(!showTtlMenu)}
+              className={`p-2 rounded-xl transition cursor-pointer flex items-center space-x-0.5 ${
+                ttlSeconds > 0
+                  ? 'bg-amber-100 text-amber-800 shadow-2xs font-semibold'
+                  : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
+              }`}
+              title="Self-Destruct Timer (TTL)"
+            >
+              <Timer className="w-4 h-4" />
+              {ttlSeconds > 0 && (
+                <span className="text-[10px] font-mono">
+                  {TTL_OPTIONS.find((t) => t.seconds === ttlSeconds)?.label}
+                </span>
+              )}
+            </button>
 
-        <button
-          type="submit"
-          disabled={(!inputText.trim() && !selectedMedia) || sending}
-          className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-xl transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
-          title={
-            activeTopic
-              ? `Send to #${activeTopic.title}`
-              : channel.isGroup
-              ? 'Send to group'
-              : 'Broadcast post to channel'
-          }
-        >
-          <Send className="w-4 h-4 stroke-[2]" />
-        </button>
+            {showTtlMenu && (
+              <div className="absolute bottom-10 left-0 bg-white border border-stone-200 rounded-xl p-1 shadow-xl z-30 min-w-[120px] space-y-0.5">
+                <span className="block text-[9px] font-mono uppercase text-stone-400 px-2 py-1">
+                  Auto-Delete
+                </span>
+                {TTL_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.seconds}
+                    type="button"
+                    onClick={() => {
+                      setTtlSeconds(opt.seconds);
+                      setShowTtlMenu(false);
+                    }}
+                    className={`w-full text-left px-2.5 py-1 text-xs rounded-lg transition ${
+                      ttlSeconds === opt.seconds
+                        ? 'bg-amber-50 text-amber-900 font-semibold'
+                        : 'hover:bg-stone-50 text-stone-700'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Schedule Toggle */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowScheduleMenu(!showScheduleMenu)}
+              className={`p-2 rounded-xl transition cursor-pointer ${
+                scheduledTime
+                  ? 'bg-sky-100 text-sky-700 shadow-2xs'
+                  : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
+              }`}
+              title="Schedule Broadcast"
+            >
+              <Calendar className="w-4 h-4" />
+            </button>
+
+            {showScheduleMenu && (
+              <div className="absolute bottom-10 left-0 bg-white border border-stone-200 rounded-xl p-3 shadow-xl z-30 w-56 space-y-2">
+                <span className="block text-[10px] font-mono uppercase text-stone-400">
+                  Broadcast later
+                </span>
+                <input
+                  type="datetime-local"
+                  onChange={(e) => setScheduledTime(e.target.value)}
+                  className="w-full text-xs bg-stone-50 border border-stone-200 rounded-lg p-1.5 font-mono"
+                />
+                <div className="flex items-center space-x-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScheduledTime(new Date(Date.now() + 3600000).toISOString().slice(0, 16));
+                      setShowScheduleMenu(false);
+                    }}
+                    className="flex-1 py-1 text-[10px] font-mono bg-stone-100 hover:bg-stone-200 rounded text-stone-700"
+                  >
+                    In 1 hour
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowScheduleMenu(false)}
+                    className="p-1 text-stone-400 hover:text-stone-700"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Poll Button */}
+          <button
+            type="button"
+            onClick={() => setIsPollModalOpen(true)}
+            className="p-2 text-stone-500 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition cursor-pointer"
+            title="Create Poll or Quiz"
+          >
+            <BarChart3 className="w-4 h-4" />
+          </button>
+
+          {/* Message Input with Draft Autosave */}
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => handleInputChange(e.target.value)}
+            placeholder={
+              activeTopic
+                ? `Message in #${activeTopic.title}...`
+                : channel.isGroup
+                ? 'Message group...'
+                : `Broadcast to ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`
+            }
+            className="flex-1 px-3.5 py-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-sans"
+          />
+
+          {/* Send Button */}
+          <button
+            type="submit"
+            disabled={(!inputText.trim() && !selectedMedia) || sending}
+            className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-xl transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
+            title={scheduledTime ? 'Schedule Broadcast' : 'Send'}
+          >
+            <Send className="w-4 h-4 stroke-[2]" />
+          </button>
+        </div>
       </form>
 
-      {/* Lightbox for viewing full-screen photos in channel */}
+      {/* Forward Modal */}
+      <ForwardModal
+        isOpen={Boolean(messageToForward)}
+        onClose={() => setMessageToForward(null)}
+        messageToForward={messageToForward}
+        contacts={allContacts}
+        channels={allChannels}
+        onForwardSuccess={() => fetchChannelPosts(true)}
+      />
+
+      {/* Poll Modal */}
+      <PollModal
+        isOpen={isPollModalOpen}
+        onClose={() => setIsPollModalOpen(false)}
+        onCreatePoll={(poll) => handleSendMessage(undefined, poll)}
+      />
+
+      {/* Lightbox for viewing full-screen photos */}
       {lightboxImg && (
         <div
           className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
@@ -667,7 +1099,6 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
             <button
               onClick={() => setLightboxImg(null)}
               className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
-              title="Close image"
             >
               <X className="w-5 h-5" />
             </button>
@@ -675,7 +1106,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
           <img
             src={lightboxImg}
             alt="Full size view"
-            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
         </div>

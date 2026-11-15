@@ -265,8 +265,25 @@ export function togglePinChannel(id: string): boolean {
 }
 
 // Messages Helpers
-export function getPeerMessages(peerId: string): Message[] {
+export function cleanExpiredMessages(): void {
   const db = getDb();
+  const now = Date.now();
+  const initialLen = db.messages.length;
+  db.messages = db.messages.filter(m => {
+    if (m.expiresAt) {
+      return new Date(m.expiresAt).getTime() > now;
+    }
+    return true;
+  });
+  if (db.messages.length !== initialLen) {
+    saveDb(db);
+  }
+}
+
+export function getPeerMessages(peerId: string): Message[] {
+  cleanExpiredMessages();
+  const db = getDb();
+  const now = Date.now();
   const cleanId = peerId.toLowerCase().replace(/^@/, '').replace(/^contact-/, '').replace(/^channel-/, '');
   const matchedContact = db.contacts.find(c =>
     c.id.toLowerCase() === peerId.toLowerCase() ||
@@ -282,6 +299,11 @@ export function getPeerMessages(peerId: string): Message[] {
 
   return db.messages
     .filter(m => {
+      // Exclude messages scheduled for future
+      if (m.scheduledFor && new Date(m.scheduledFor).getTime() > now) {
+        return false;
+      }
+
       const mClean = m.peerId.toLowerCase().replace(/^@/, '').replace(/^contact-/, '').replace(/^channel-/, '');
       return (
         m.peerId === targetId ||
@@ -292,6 +314,77 @@ export function getPeerMessages(peerId: string): Message[] {
       );
     })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+export function toggleMessageReaction(messageId: string, emoji: string): Message | null {
+  const db = getDb();
+  const msg = db.messages.find(m => m.id === messageId);
+  if (!msg) return null;
+
+  if (!msg.reactions) {
+    msg.reactions = {};
+  }
+
+  const currentEmoji = msg.userReaction;
+  if (currentEmoji === emoji) {
+    // Toggle off
+    msg.reactions[emoji] = Math.max(0, (msg.reactions[emoji] || 1) - 1);
+    if (msg.reactions[emoji] === 0) {
+      delete msg.reactions[emoji];
+    }
+    delete msg.userReaction;
+  } else {
+    // If user previously reacted with another emoji, decrease that one
+    if (currentEmoji && msg.reactions[currentEmoji]) {
+      msg.reactions[currentEmoji] = Math.max(0, msg.reactions[currentEmoji] - 1);
+      if (msg.reactions[currentEmoji] === 0) {
+        delete msg.reactions[currentEmoji];
+      }
+    }
+    // Add new reaction
+    msg.reactions[emoji] = (msg.reactions[emoji] || 0) + 1;
+    msg.userReaction = emoji;
+  }
+
+  saveDb(db);
+  return msg;
+}
+
+export function togglePinMessage(messageId: string): Message | null {
+  const db = getDb();
+  const msg = db.messages.find(m => m.id === messageId);
+  if (!msg) return null;
+
+  msg.isPinned = !msg.isPinned;
+  saveDb(db);
+  return msg;
+}
+
+export function voteMessagePoll(messageId: string, optionIndex: number): Message | null {
+  const db = getDb();
+  const msg = db.messages.find(m => m.id === messageId);
+  if (!msg || !msg.poll || msg.poll.isClosed) return null;
+
+  const poll = msg.poll;
+  if (optionIndex < 0 || optionIndex >= poll.options.length) return null;
+
+  // If user already voted for this option, do nothing
+  if (poll.userVotedIndex === optionIndex) {
+    return msg;
+  }
+
+  // If user previously voted for another option, remove old vote
+  if (poll.userVotedIndex !== undefined && poll.userVotedIndex >= 0 && poll.userVotedIndex < poll.options.length) {
+    poll.options[poll.userVotedIndex].votes = Math.max(0, poll.options[poll.userVotedIndex].votes - 1);
+  } else {
+    poll.totalVotes = (poll.totalVotes || 0) + 1;
+  }
+
+  poll.options[optionIndex].votes = (poll.options[optionIndex].votes || 0) + 1;
+  poll.userVotedIndex = optionIndex;
+
+  saveDb(db);
+  return msg;
 }
 
 export function addMessageToPeer(message: Message): Message {

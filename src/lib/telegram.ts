@@ -5,8 +5,11 @@ import { ApprovedContact, ApprovedChannel, Message, UserSession } from './types'
 
 // In-memory active client reference
 let activeClient: TelegramClient | null = null;
+let connectingPromise: Promise<TelegramClient | null> | null = null;
+let lastSessionUsed: string | null = null;
 let currentPhoneCodeHash: string | null = null;
 let currentPhoneNumber: string | null = null;
+let lastUnreadSyncTime = 0;
 
 export function getActiveApiCredentials(): { apiId: number; apiHash: string } | null {
   const creds = getApiCredentials();
@@ -35,79 +38,68 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
     return null;
   }
 
-  // If activeClient exists and matches this session, reuse it
-  if (activeClient && activeClient.connected) {
-    try {
-      const currentSaved = activeClient.session.save() as unknown as string;
-      if (currentSaved === sessionString) {
-        return activeClient;
-      }
-    } catch {
-      // ignore
+  // If activeClient is already connected for this session, reuse immediately
+  if (activeClient && activeClient.connected && lastSessionUsed === sessionString) {
+    return activeClient;
+  }
+
+  // If already connecting for this session, share in-flight promise to avoid MTProto collision
+  if (connectingPromise && lastSessionUsed === sessionString) {
+    return connectingPromise;
+  }
+
+  connectingPromise = (async () => {
+    lastSessionUsed = sessionString;
+
+    // Disconnect any stale or mismatched client cleanly
+    if (activeClient) {
+      try {
+        await activeClient.disconnect();
+      } catch {}
+      activeClient = null;
     }
-  }
 
-  // Clean up any stale client reference
-  if (activeClient) {
-    try {
-      await activeClient.disconnect();
-    } catch {}
-    activeClient = null;
-  }
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const stringSession = new StringSession(sessionString);
+        const client = new TelegramClient(stringSession, apiId, apiHash, {
+          connectionRetries: 5,
+          autoReconnect: true,
+          useWSS: false,
+        });
 
-  // Attempt connection with retry to handle serverless concurrency
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const stringSession = new StringSession(sessionString);
-      const client = new TelegramClient(stringSession, apiId, apiHash, {
-        connectionRetries: 3,
-        timeout: 15,
-        useWSS: false,
-      });
+        const connectPromise = client.connect();
+        const timeoutPromise = new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('MTProto connection timeout (20s)')), 20000)
+        );
 
-      const connectPromise = client.connect();
-      const timeoutPromise = new Promise<void>((_, reject) =>
-        setTimeout(() => reject(new Error('MTProto connection timeout (15s)')), 15000)
-      );
+        await Promise.race([connectPromise, timeoutPromise]);
+        activeClient = client;
+        return client;
+      } catch (err: unknown) {
+        const errStr = String(err);
+        console.warn(`MTProto connect attempt ${attempt} notice:`, errStr);
 
-      await Promise.race([connectPromise, timeoutPromise]);
-      activeClient = client;
-      return client;
-    } catch (err: unknown) {
-      const errStr = String(err);
-      console.warn(`MTProto connect attempt ${attempt} notice:`, errStr);
-
-      if (
-        errStr.includes('AUTH_KEY_UNREGISTERED') ||
-        errStr.includes('SESSION_REVOKED') ||
-        errStr.includes('SESSION_EXPIRED')
-      ) {
-        console.warn('Telegram session key revoked by Telegram DC.');
-        const current = getUserSession();
-        if (current) {
-          setUserSession({
-            ...current,
-            isConnected: false,
-            sessionString: '',
-          });
+        if (errStr.includes('AUTH_KEY_DUPLICATED') && attempt < 3) {
+          // Add random jitter 1200-2200ms to allow concurrent lambda to release session
+          const delay = 1200 + Math.floor(Math.random() * 1000);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
         }
-        activeClient = null;
-        return null;
-      }
 
-      if (errStr.includes('AUTH_KEY_DUPLICATED') && attempt < 2) {
-        // Concurrent serverless connection collision. Wait 1.2s before retry.
-        await new Promise((r) => setTimeout(r, 1200));
-        continue;
-      }
-
-      if (attempt === 2) {
-        return null;
+        if (attempt === 3) {
+          return null;
+        }
       }
     }
-  }
+    return null;
+  })();
 
-  return null;
+  try {
+    return await connectingPromise;
+  } finally {
+    connectingPromise = null;
+  }
 }
 
 /**
@@ -477,14 +469,19 @@ export async function verifyTelegramUsername(rawUsername: string, customSessionS
 }
 
 /**
- * Send message to an approved contact
+ * Send message to an approved contact, channel, or group with support for silent send, scheduling, topics, and replies
  */
 export async function sendTelegramMessage(
   peerUsername: string,
   text: string,
   media?: { type: 'image' | 'video' | 'voice' | 'document'; url: string; name?: string },
   customSessionString?: string,
-  topicId?: number
+  topicId?: number,
+  options?: {
+    silent?: boolean;
+    scheduleDate?: number;
+    replyToMsgId?: number;
+  }
 ): Promise<boolean> {
   const client = await getOrInitTelegramClient(customSessionString);
   if (client && client.connected) {
@@ -549,6 +546,8 @@ export async function sendTelegramMessage(
         return false;
       }
 
+      const replyTarget = options?.replyToMsgId ? Number(options.replyToMsgId) : (topicId ? Number(topicId) : undefined);
+
       if (media && media.url && media.url.startsWith('data:')) {
         try {
           const matches = media.url.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -557,7 +556,9 @@ export async function sendTelegramMessage(
             await client.sendFile(entity as any, {
               file: buffer,
               caption: text || (media.name ? `📎 ${media.name}` : undefined),
-              replyTo: topicId ? Number(topicId) : undefined,
+              replyTo: replyTarget,
+              silent: options?.silent,
+              scheduleDate: options?.scheduleDate,
               workers: 1,
             });
             return true;
@@ -569,7 +570,9 @@ export async function sendTelegramMessage(
 
       await client.sendMessage(entity as any, {
         message: text + (media?.name ? `\n[Attached: ${media.name}]` : ''),
-        replyTo: topicId ? Number(topicId) : undefined,
+        replyTo: replyTarget,
+        silent: options?.silent,
+        schedule: options?.scheduleDate,
       });
       return true;
     } catch (err) {
@@ -578,6 +581,95 @@ export async function sendTelegramMessage(
     }
   }
   return true; // simulated in demo mode
+}
+
+/**
+ * Dispatch reaction to a message via Telegram MTProto
+ */
+export async function reactToTelegramMessage(
+  peerUsername: string,
+  msgId: number,
+  emoji: string,
+  customSessionString?: string
+): Promise<boolean> {
+  const client = await getOrInitTelegramClient(customSessionString);
+  if (!client || !client.connected) return true;
+
+  try {
+    const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim().toLowerCase() : '';
+    let entity: any = null;
+    if (cleanUsername) {
+      try {
+        entity = await client.getEntity(cleanUsername);
+      } catch {}
+    }
+    if (!entity) {
+      const dialogs = await client.getDialogs({ limit: 60 });
+      const matched = dialogs.find(d => {
+        const dId = d.id ? d.id.toString() : '';
+        return dId.includes(peerUsername.replace(/[^\d]/g, ''));
+      });
+      if (matched) entity = matched.inputEntity || matched.entity;
+    }
+    if (!entity) return false;
+
+    await client.invoke(
+      new Api.messages.SendReaction({
+        peer: entity,
+        msgId,
+        reaction: [new Api.ReactionEmoji({ emoticon: emoji })],
+      })
+    );
+    return true;
+  } catch (err) {
+    console.warn('Telegram sendReaction notice:', err);
+    return false;
+  }
+}
+
+/**
+ * Pin or unpin a message in Telegram MTProto
+ */
+export async function pinTelegramMessage(
+  peerUsername: string,
+  msgId: number,
+  unpin = false,
+  customSessionString?: string
+): Promise<boolean> {
+  const client = await getOrInitTelegramClient(customSessionString);
+  if (!client || !client.connected) return true;
+
+  try {
+    const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim().toLowerCase() : '';
+    let entity: any = null;
+    if (cleanUsername) {
+      try {
+        entity = await client.getEntity(cleanUsername);
+      } catch {}
+    }
+    if (!entity) {
+      const dialogs = await client.getDialogs({ limit: 60 });
+      const matched = dialogs.find(d => {
+        const dId = d.id ? d.id.toString() : '';
+        return dId.includes(peerUsername.replace(/[^\d]/g, ''));
+      });
+      if (matched) entity = matched.inputEntity || matched.entity;
+    }
+    if (!entity) return false;
+
+    await client.invoke(
+      new Api.messages.UpdatePinnedMessage({
+        peer: entity,
+        id: msgId,
+        unpin,
+        silent: true,
+      })
+    );
+    return true;
+  } catch (err) {
+    console.warn('Telegram updatePinnedMessage notice:', err);
+    return false;
+  }
 }
 
 /**
@@ -845,6 +937,9 @@ export async function syncMessagesFromTelegram(
       }
     }
 
+    if (synced.length > 0) {
+      saveRealTelegramMessages(peerId, synced);
+    }
     return synced;
   } catch (err) {
     console.warn('Real telegram message fetch notice:', err);
@@ -929,7 +1024,11 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
     };
   }
 
-  const client = await getOrInitTelegramClient(customSessionString);
+  let client = await getOrInitTelegramClient(customSessionString);
+  if (!client || !client.connected) {
+    await new Promise((r) => setTimeout(r, 1200));
+    client = await getOrInitTelegramClient(customSessionString);
+  }
   if (!client || !client.connected) {
     return { dialogs: [], notConnected: true };
   }
@@ -939,13 +1038,6 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
     const results: TelegramJoinedDialog[] = [];
 
     for (const d of dialogs) {
-      const isChannel = Boolean(d.isChannel);
-      const isGroup = Boolean(d.isGroup);
-      const isUser = Boolean(d.isUser);
-
-      if (!isChannel && !isGroup && !isUser) continue;
-      if (d.id && d.id.toString() === '777000') continue; // Telegram service notices
-
       const entity = d.entity as unknown as {
         id?: { toString: () => string };
         title?: string;
@@ -954,7 +1046,15 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
         username?: string;
         megagroup?: boolean;
         broadcast?: boolean;
+        className?: string;
       };
+
+      const isChannel = Boolean(d.isChannel) || entity?.className === 'Channel' || Boolean(entity?.broadcast);
+      const isGroup = Boolean(d.isGroup) || entity?.className === 'Chat' || Boolean(entity?.megagroup);
+      const isUser = Boolean(d.isUser) || entity?.className === 'User';
+
+      if (!isChannel && !isGroup && !isUser) continue;
+      if (d.id && d.id.toString() === '777000') continue; // Telegram service notices
 
       const idStr = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
       if (!idStr) continue;
@@ -962,6 +1062,9 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
       let title = d.title || entity?.title || '';
       if (!title && isUser) {
         title = `${entity?.firstName || ''} ${entity?.lastName || ''}`.trim() || 'Telegram Contact';
+      }
+      if (!title) {
+        title = entity?.username ? `@${entity.username}` : (isUser ? 'Telegram Contact' : 'Telegram Group');
       }
 
       const username = entity?.username || undefined;
@@ -1004,16 +1107,16 @@ export async function postTelegramStory(params: {
     };
   }
 
-  const client = await getOrInitTelegramClient(customSessionString);
+  let client = await getOrInitTelegramClient(customSessionString);
+  if (!client || !client.connected) {
+    await new Promise((r) => setTimeout(r, 1200));
+    client = await getOrInitTelegramClient(customSessionString);
+  }
   if (!client || !client.connected) {
     return {
       success: false,
       error: 'Not connected to Telegram. Please reconnect your account using the Connect button.',
     };
-  }
-
-  if (!client || !client.connected) {
-    return { success: false, error: 'Telegram account not connected' };
   }
 
   try {
@@ -1061,6 +1164,12 @@ export async function postTelegramStory(params: {
  * 2. Strictly excludes channels and groups from auto-adding (channels/groups only appear if user approved them).
  */
 export async function syncContactUnreadStatusFromTelegram(customSessionString?: string): Promise<void> {
+  const now = Date.now();
+  if (now - lastUnreadSyncTime < 15000) {
+    return; // Throttled to avoid MTProto collision with user actions
+  }
+  lastUnreadSyncTime = now;
+
   const client = await getOrInitTelegramClient(customSessionString);
   if (!client || !client.connected) return;
 

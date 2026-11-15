@@ -22,14 +22,37 @@ import {
   notifyContactMessage,
   notifyChannelPost,
 } from '@/lib/notifications';
-import { Palette } from 'lucide-react';
+import { Palette, Radio, Users, Settings as SettingsIcon, MessageSquare } from 'lucide-react';
 
 type TabView = 'home' | 'channels' | 'contacts' | 'settings';
 
 export default function TelegramFocusApp() {
   const [activeTab, setActiveTab] = useState<TabView>('home');
   const [theme, setTheme] = useState<AppTheme>('paper');
-  const [session, setSession] = useState<UserSession | null>(null);
+  const [session, setSession] = useState<UserSession | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const token = localStorage.getItem('tg_focus_session');
+    const userStr = localStorage.getItem('tg_focus_user');
+    if (token && token.length > 10) {
+      let initialUser: UserSession = {
+        userId: 'tg-user',
+        firstName: 'Telegram User',
+        phone: '',
+        sessionString: token,
+        isConnected: true,
+        isDemoMode: token.startsWith('mock_') || token.startsWith('demo_'),
+        connectedAt: new Date().toISOString(),
+        lastSyncedAt: new Date().toISOString(),
+      };
+      if (userStr) {
+        try {
+          initialUser = { ...initialUser, ...JSON.parse(userStr), isConnected: true, sessionString: token };
+        } catch {}
+      }
+      return initialUser;
+    }
+    return null;
+  });
   const [isApiConfigured, setIsApiConfigured] = useState<boolean>(false);
   const [contacts, setContacts] = useState<ApprovedContact[]>([]);
   const [channels, setChannels] = useState<ApprovedChannel[]>([]);
@@ -603,6 +626,8 @@ export default function TelegramFocusApp() {
               }}
               onMessageSent={loadData}
               onRemoveContact={handleRemoveContact}
+              allContacts={contacts}
+              allChannels={channels}
             />
           ) : activeChannel ? (
             <ChannelView
@@ -612,6 +637,8 @@ export default function TelegramFocusApp() {
                 loadData();
               }}
               onRemoveChannel={handleRemoveChannel}
+              allContacts={contacts}
+              allChannels={channels}
               onNotificationToggled={(enabled) => {
                 setChannels((prev) =>
                   prev.map((c) =>
@@ -661,52 +688,80 @@ export default function TelegramFocusApp() {
           )}
         </div>
 
-        {/* Bottom Navigation (Section 8: Channels | Contacts | Settings) */}
+        {/* Modern Telegram Bottom Navigation */}
         {!activeContact && !activeChannel && (
-          <nav className="h-14 bg-white/90 backdrop-blur-xs border-t border-black/10 dark:border-white/10 flex items-center justify-around px-2 shrink-0 select-none shadow-2xs">
+          <nav className="h-16 bg-white/95 dark:bg-stone-900/95 backdrop-blur-md border-t border-stone-200/80 dark:border-stone-800 flex items-center justify-around px-3 shrink-0 select-none shadow-lg">
+            {/* Channels Tab */}
             <button
               onClick={() => {
                 setActiveTab('home');
                 setActiveContact(null);
                 setActiveChannel(null);
               }}
-              className={`flex-1 py-3 text-center text-xs font-mono uppercase tracking-wider transition-all duration-150 cursor-pointer ${
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'home' || activeTab === 'channels'
-                  ? 'font-bold border-b-2 border-current -mb-px'
-                  : 'opacity-40 hover:opacity-80'
+                  ? 'text-sky-600 dark:text-sky-400 font-semibold'
+                  : 'text-stone-400 hover:text-stone-700 dark:hover:text-stone-200'
               }`}
             >
-              Channels
+              <div className="relative">
+                <Radio className={`w-5 h-5 transition-transform duration-200 ${
+                  activeTab === 'home' || activeTab === 'channels' ? 'scale-110 stroke-[2.5]' : ''
+                }`} />
+                {channels.some((ch) => ch.hasNewPost) && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-sky-500 shadow-xs animate-pulse" />
+                )}
+              </div>
+              <span className="text-[11px] font-sans tracking-tight mt-1">
+                Channels
+              </span>
             </button>
 
+            {/* Contacts Tab */}
             <button
               onClick={() => {
-                setActiveTab('home');
+                setActiveTab('contacts');
                 setActiveContact(null);
                 setActiveChannel(null);
               }}
-              className={`flex-1 py-3 text-center text-xs font-mono uppercase tracking-wider transition-all duration-150 cursor-pointer ${
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'contacts'
-                  ? 'font-bold border-b-2 border-current -mb-px'
-                  : 'opacity-40 hover:opacity-80'
+                  ? 'text-sky-600 dark:text-sky-400 font-semibold'
+                  : 'text-stone-400 hover:text-stone-700 dark:hover:text-stone-200'
               }`}
             >
-              Contacts
+              <div className="relative">
+                <Users className={`w-5 h-5 transition-transform duration-200 ${
+                  activeTab === 'contacts' ? 'scale-110 stroke-[2.5]' : ''
+                }`} />
+                {contacts.some((c) => c.status === 'new_message' || (c.unreadCount && c.unreadCount > 0)) && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-blue-600 shadow-xs animate-pulse" />
+                )}
+              </div>
+              <span className="text-[11px] font-sans tracking-tight mt-1">
+                Contacts
+              </span>
             </button>
 
+            {/* Settings Tab */}
             <button
               onClick={() => {
                 setActiveTab('settings');
                 setActiveContact(null);
                 setActiveChannel(null);
               }}
-              className={`flex-1 py-3 text-center text-xs font-mono uppercase tracking-wider transition-all duration-150 cursor-pointer ${
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 rounded-xl transition-all duration-200 cursor-pointer ${
                 activeTab === 'settings'
-                  ? 'font-bold border-b-2 border-current -mb-px'
-                  : 'opacity-40 hover:opacity-80'
+                  ? 'text-sky-600 dark:text-sky-400 font-semibold'
+                  : 'text-stone-400 hover:text-stone-700 dark:hover:text-stone-200'
               }`}
             >
-              Settings
+              <SettingsIcon className={`w-5 h-5 transition-transform duration-200 ${
+                activeTab === 'settings' ? 'scale-110 stroke-[2.5]' : ''
+              }`} />
+              <span className="text-[11px] font-sans tracking-tight mt-1">
+                Settings
+              </span>
             </button>
           </nav>
         )}

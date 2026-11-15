@@ -49,6 +49,24 @@ export interface MessageMedia {
   size?: string;
 }
 
+export interface PollOption {
+  text: string;
+  votes: number;
+  isCorrect?: boolean;
+}
+
+export interface MessagePoll {
+  id: string;
+  question: string;
+  options: PollOption[];
+  totalVotes: number;
+  isClosed?: boolean;
+  isQuiz?: boolean;
+  userVotedIndex?: number;
+  correctOptionIndex?: number;
+  explanation?: string;
+}
+
 export interface Message {
   id: string;
   peerId: string; // contactId or channelId
@@ -62,6 +80,14 @@ export interface Message {
   replyToId?: string;
   replyToSnippet?: string;
   topicId?: number;
+  reactions?: Record<string, number>;
+  userReaction?: string;
+  isPinned?: boolean;
+  isSilent?: boolean;
+  expiresAt?: string; // ISO timestamp for self-destructing messages
+  scheduledFor?: string; // ISO timestamp for scheduled messages
+  forwardFrom?: { id?: string; name: string; username?: string };
+  poll?: MessagePoll;
 }
 
 export interface AppSettings {
