@@ -80,6 +80,7 @@ export function ConversationView({
   // Advanced features state
   const [isSilent, setIsSilent] = useState(false);
   const [ttlSeconds, setTtlSeconds] = useState(0);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const [showTtlMenu, setShowTtlMenu] = useState(false);
   const [showScheduleMenu, setShowScheduleMenu] = useState(false);
   const [scheduledTime, setScheduledTime] = useState<string>('');
@@ -219,6 +220,8 @@ export function ConversationView({
         setSelectedMedia(null);
         setReplyTo(null);
         setScheduledTime('');
+        setShowAttachmentMenu(false);
+        setShowTtlMenu(false);
         setShowScheduleMenu(false);
         setMessages((prev) => [...prev, data.message]);
         if (onMessageSent) onMessageSent();
@@ -785,12 +788,240 @@ export function ConversationView({
         </div>
       )}
 
+      {/* Silent mode active indicator */}
+      {isSilent && (
+        <div className="px-4 py-1.5 bg-amber-50 border-t border-amber-200 flex items-center justify-between text-[11px] text-amber-900">
+          <span className="flex items-center space-x-1.5">
+            <BellOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+            <span>Silent message (recipient will not hear notification sound)</span>
+          </span>
+          <button type="button" onClick={() => setIsSilent(false)} className="p-0.5 hover:text-amber-950">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
+      {/* Self-destruct TTL active indicator */}
+      {ttlSeconds > 0 && (
+        <div className="px-4 py-1.5 bg-rose-50 border-t border-rose-200 flex items-center justify-between text-[11px] text-rose-900">
+          <span className="flex items-center space-x-1.5">
+            <Timer className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+            <span>Self-destruct timer: {TTL_OPTIONS.find((t) => t.seconds === ttlSeconds)?.label} after read</span>
+          </span>
+          <button type="button" onClick={() => setTtlSeconds(0)} className="p-0.5 hover:text-rose-950">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
       {/* Modern Composer Bar */}
       <form
         onSubmit={(e) => handleSendMessage(e)}
-        className="p-3 bg-white border-t border-stone-200/90 flex flex-col space-y-2 shrink-0 z-10"
+        className="p-3 bg-white border-t border-stone-200/90 flex flex-col shrink-0 z-10 relative"
       >
-        <div className="flex items-center space-x-1.5">
+        {/* Attachment & Features Popup Drawer */}
+        {showAttachmentMenu && (
+          <>
+            <div
+              className="fixed inset-0 z-20"
+              onClick={() => {
+                setShowAttachmentMenu(false);
+                setShowTtlMenu(false);
+                setShowScheduleMenu(false);
+              }}
+            />
+            <div className="absolute bottom-16 left-3 bg-white border border-stone-200 rounded-2xl p-3 shadow-2xl z-30 w-72 max-w-[calc(100vw-24px)] animate-in fade-in slide-in-from-bottom-2 duration-150">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-stone-100">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-stone-400 font-semibold">
+                  Attachments & Tools
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAttachmentMenu(false)}
+                  className="p-1 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                {/* Camera */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    cameraInputRef.current?.click();
+                    setShowAttachmentMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl hover:bg-stone-50 transition cursor-pointer group text-stone-700"
+                >
+                  <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-1 group-hover:scale-105 transition shadow-2xs">
+                    <Camera className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-medium">Camera</span>
+                </button>
+
+                {/* File */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setShowAttachmentMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl hover:bg-stone-50 transition cursor-pointer group text-stone-700"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-1 group-hover:scale-105 transition shadow-2xs">
+                    <Paperclip className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-medium">File</span>
+                </button>
+
+                {/* Poll */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPollModalOpen(true);
+                    setShowAttachmentMenu(false);
+                  }}
+                  className="flex flex-col items-center justify-center p-2 rounded-xl hover:bg-stone-50 transition cursor-pointer group text-stone-700"
+                >
+                  <div className="w-10 h-10 rounded-full bg-violet-50 text-violet-600 flex items-center justify-center mb-1 group-hover:scale-105 transition shadow-2xs">
+                    <BarChart3 className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-medium">Poll</span>
+                </button>
+
+                {/* Silent Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSilent(!isSilent);
+                  }}
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl transition cursor-pointer group ${
+                    isSilent ? 'bg-amber-50 text-amber-900 font-semibold' : 'hover:bg-stone-50 text-stone-700'
+                  }`}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 group-hover:scale-105 transition shadow-2xs ${
+                      isSilent ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-600'
+                    }`}
+                  >
+                    {isSilent ? <BellOff className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                  </div>
+                  <span className="text-[11px] font-medium">{isSilent ? 'Silent ON' : 'Silent'}</span>
+                </button>
+
+                {/* TTL Timer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTtlMenu(!showTtlMenu);
+                    setShowScheduleMenu(false);
+                  }}
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl transition cursor-pointer group ${
+                    ttlSeconds > 0 ? 'bg-rose-50 text-rose-900 font-semibold' : 'hover:bg-stone-50 text-stone-700'
+                  }`}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 group-hover:scale-105 transition shadow-2xs ${
+                      ttlSeconds > 0 ? 'bg-rose-500 text-white' : 'bg-rose-50 text-rose-600'
+                    }`}
+                  >
+                    <Timer className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-medium">
+                    {ttlSeconds > 0 ? `${TTL_OPTIONS.find((t) => t.seconds === ttlSeconds)?.label}` : 'Timer'}
+                  </span>
+                </button>
+
+                {/* Schedule */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowScheduleMenu(!showScheduleMenu);
+                    setShowTtlMenu(false);
+                  }}
+                  className={`flex flex-col items-center justify-center p-2 rounded-xl transition cursor-pointer group ${
+                    scheduledTime ? 'bg-sky-50 text-sky-900 font-semibold' : 'hover:bg-stone-50 text-stone-700'
+                  }`}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center mb-1 group-hover:scale-105 transition shadow-2xs ${
+                      scheduledTime ? 'bg-sky-500 text-white' : 'bg-sky-50 text-sky-600'
+                    }`}
+                  >
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <span className="text-[11px] font-medium">Schedule</span>
+                </button>
+              </div>
+
+              {/* Submenu for TTL */}
+              {showTtlMenu && (
+                <div className="mt-2 pt-2 border-t border-stone-100">
+                  <span className="block text-[10px] font-mono uppercase text-stone-400 mb-1.5">
+                    Auto-delete after:
+                  </span>
+                  <div className="grid grid-cols-4 gap-1">
+                    {TTL_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.seconds}
+                        type="button"
+                        onClick={() => {
+                          setTtlSeconds(opt.seconds);
+                          setShowTtlMenu(false);
+                        }}
+                        className={`px-1.5 py-1 text-xs rounded-lg text-center transition font-mono cursor-pointer ${
+                          ttlSeconds === opt.seconds
+                            ? 'bg-rose-500 text-white font-semibold'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Submenu for Schedule */}
+              {showScheduleMenu && (
+                <div className="mt-2 pt-2 border-t border-stone-100 space-y-2">
+                  <span className="block text-[10px] font-mono uppercase text-stone-400">
+                    Send later at:
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={scheduledTime}
+                    onChange={(e) => setScheduledTime(e.target.value)}
+                    className="w-full text-xs bg-stone-50 border border-stone-200 rounded-lg p-2 font-mono"
+                  />
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScheduledTime(new Date(Date.now() + 3600000).toISOString().slice(0, 16));
+                        setShowScheduleMenu(false);
+                      }}
+                      className="flex-1 py-1 text-[11px] font-mono bg-stone-100 hover:bg-stone-200 rounded text-stone-700 cursor-pointer"
+                    >
+                      In 1 hour
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowScheduleMenu(false)}
+                      className="px-3 py-1 text-[11px] bg-sky-500 text-white rounded font-medium cursor-pointer"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Input Row */}
+        <div className="flex items-center space-x-2">
           <input
             type="file"
             ref={fileInputRef}
@@ -807,141 +1038,21 @@ export function ConversationView({
             className="hidden"
           />
 
+          {/* Attachment Toggle Button */}
           <button
             type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="p-2 text-stone-500 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition cursor-pointer"
-            title="Camera"
-          >
-            <Camera className="w-4 h-4 stroke-[2]" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2 text-stone-500 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition cursor-pointer"
-            title="Attach File"
-          >
-            <Paperclip className="w-4 h-4 stroke-[2]" />
-          </button>
-
-          {/* Silent Send Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsSilent(!isSilent)}
-            className={`p-2 rounded-xl transition cursor-pointer ${
-              isSilent
-                ? 'bg-sky-100 text-sky-700 shadow-2xs font-semibold'
+            onClick={() => setShowAttachmentMenu(!showAttachmentMenu)}
+            className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition cursor-pointer relative ${
+              showAttachmentMenu || isSilent || ttlSeconds > 0 || scheduledTime
+                ? 'bg-sky-100 text-sky-700'
                 : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
             }`}
-            title={isSilent ? 'Silent Mode On (No sound on recipient phone)' : 'Silent Mode Off'}
+            title="Attach file, photo, poll, or options"
           >
-            {isSilent ? <BellOff className="w-4 h-4 text-sky-600" /> : <Bell className="w-4 h-4" />}
-          </button>
-
-          {/* Self-Destruct Timer Menu */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowTtlMenu(!showTtlMenu)}
-              className={`p-2 rounded-xl transition cursor-pointer flex items-center space-x-0.5 ${
-                ttlSeconds > 0
-                  ? 'bg-amber-100 text-amber-800 shadow-2xs font-semibold'
-                  : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
-              }`}
-              title="Self-Destruct Timer (TTL)"
-            >
-              <Timer className="w-4 h-4" />
-              {ttlSeconds > 0 && (
-                <span className="text-[10px] font-mono">
-                  {TTL_OPTIONS.find((t) => t.seconds === ttlSeconds)?.label}
-                </span>
-              )}
-            </button>
-
-            {showTtlMenu && (
-              <div className="absolute bottom-10 left-0 bg-white border border-stone-200 rounded-xl p-1 shadow-xl z-30 min-w-[120px] space-y-0.5">
-                <span className="block text-[9px] font-mono uppercase text-stone-400 px-2 py-1">
-                  Auto-Delete
-                </span>
-                {TTL_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.seconds}
-                    type="button"
-                    onClick={() => {
-                      setTtlSeconds(opt.seconds);
-                      setShowTtlMenu(false);
-                    }}
-                    className={`w-full text-left px-2.5 py-1 text-xs rounded-lg transition ${
-                      ttlSeconds === opt.seconds
-                        ? 'bg-amber-50 text-amber-900 font-semibold'
-                        : 'hover:bg-stone-50 text-stone-700'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
+            <Paperclip className="w-5 h-5 stroke-[2]" />
+            {(isSilent || ttlSeconds > 0 || scheduledTime) && (
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-sky-500 rounded-full ring-2 ring-white" />
             )}
-          </div>
-
-          {/* Schedule Message Toggle */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowScheduleMenu(!showScheduleMenu)}
-              className={`p-2 rounded-xl transition cursor-pointer ${
-                scheduledTime
-                  ? 'bg-sky-100 text-sky-700 shadow-2xs'
-                  : 'text-stone-500 hover:text-stone-900 hover:bg-stone-100'
-              }`}
-              title="Schedule Message"
-            >
-              <Calendar className="w-4 h-4" />
-            </button>
-
-            {showScheduleMenu && (
-              <div className="absolute bottom-10 left-0 bg-white border border-stone-200 rounded-xl p-3 shadow-xl z-30 w-56 space-y-2">
-                <span className="block text-[10px] font-mono uppercase text-stone-400">
-                  Send later
-                </span>
-                <input
-                  type="datetime-local"
-                  onChange={(e) => setScheduledTime(e.target.value)}
-                  className="w-full text-xs bg-stone-50 border border-stone-200 rounded-lg p-1.5 font-mono"
-                />
-                <div className="flex items-center space-x-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Schedule in 1 hour
-                      setScheduledTime(new Date(Date.now() + 3600000).toISOString().slice(0, 16));
-                      setShowScheduleMenu(false);
-                    }}
-                    className="flex-1 py-1 text-[10px] font-mono bg-stone-100 hover:bg-stone-200 rounded text-stone-700"
-                  >
-                    In 1 hour
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowScheduleMenu(false)}
-                    className="p-1 text-stone-400 hover:text-stone-700"
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Poll Button */}
-          <button
-            type="button"
-            onClick={() => setIsPollModalOpen(true)}
-            className="p-2 text-stone-500 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition cursor-pointer"
-            title="Create Poll or Quiz"
-          >
-            <BarChart3 className="w-4 h-4" />
           </button>
 
           {/* Message Input with Draft Autosave */}
@@ -950,17 +1061,21 @@ export function ConversationView({
             value={inputText}
             onChange={(e) => handleInputChange(e.target.value)}
             placeholder={`Message ${contact.firstName}...`}
-            className="flex-1 px-3.5 py-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-sans"
+            className="min-w-0 flex-1 px-4 py-2.5 text-xs bg-stone-50 border border-stone-200 rounded-full focus:outline-none focus:border-stone-400 focus:bg-white transition placeholder:text-stone-400 font-sans"
           />
 
           {/* Send Button */}
           <button
             type="submit"
             disabled={(!inputText.trim() && !selectedMedia) || sending}
-            className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-xl transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
+            className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shadow-sm cursor-pointer ${
+              (inputText.trim() || selectedMedia) && !sending
+                ? 'bg-sky-500 hover:bg-sky-600 text-white shadow-sky-500/25 active:scale-95'
+                : 'bg-stone-200 text-stone-400 cursor-not-allowed opacity-60'
+            }`}
             title={scheduledTime ? 'Schedule Message' : 'Send'}
           >
-            <Send className="w-4 h-4 stroke-[2]" />
+            <Send className="w-4 h-4 stroke-[2.2] ml-0.5" />
           </button>
         </div>
       </form>
