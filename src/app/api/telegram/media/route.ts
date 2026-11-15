@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const peerId = searchParams.get('peerId');
     const messageId = searchParams.get('messageId');
+    const queryUsername = (searchParams.get('username') || '').replace(/^@/, '').trim();
 
     if (!peerId || !messageId) {
       return new NextResponse('Missing peerId or messageId', { status: 400 });
@@ -22,7 +23,8 @@ export async function GET(req: NextRequest) {
       return new NextResponse('Not connected to Telegram', { status: 401 });
     }
 
-    const cleanUsername = peerId.replace(/^contact-/, '').replace(/^channel-/, '').replace(/^@/, '').toLowerCase();
+    const effectiveUsername = queryUsername || peerId.replace(/^contact-/, '').replace(/^channel-/, '').replace(/^@/, '').trim();
+    const cleanUsername = effectiveUsername.toLowerCase();
     const cleanRawId = peerId
       .replace(/^contact-/, '')
       .replace(/^channel-/, '')
@@ -30,35 +32,44 @@ export async function GET(req: NextRequest) {
       .replace(/^-/, '')
       .toLowerCase();
 
-    // Resolve entity via dialogs (has inputEntity with accessHash)
     let entity: unknown = null;
-    try {
-      const dialogs = await client.getDialogs({ limit: 150 });
-      const matched = dialogs.find((d) => {
-        const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
-        const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
-        const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
-        const dUser = dEntity?.username?.toLowerCase();
-        return (
-          cleanDId === cleanRawId ||
-          (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
-        );
-      });
-      if (matched) {
-        entity = matched.inputEntity || matched.entity;
+
+    // 1. Resolve entity directly by username (fastest)
+    if (effectiveUsername && !effectiveUsername.startsWith('user_') && !effectiveUsername.startsWith('private_')) {
+      try {
+        entity = await client.getEntity(effectiveUsername);
+      } catch {
+        try {
+          entity = await client.getEntity(cleanUsername);
+        } catch {
+          // Fall through
+        }
       }
-    } catch {
-      // ignore
     }
 
-    if (!entity && cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+    // 2. Resolve entity via dialogs (has inputEntity with accessHash)
+    if (!entity) {
       try {
-        entity = await client.getEntity(cleanUsername);
+        const dialogs = await client.getDialogs({ limit: 120 });
+        const matched = dialogs.find((d) => {
+          const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
+          const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
+          const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+          const dUser = dEntity?.username?.toLowerCase();
+          return (
+            cleanDId === cleanRawId ||
+            (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
+          );
+        });
+        if (matched) {
+          entity = matched.inputEntity || matched.entity;
+        }
       } catch {
         // ignore
       }
     }
 
+    // 3. Resolve by numerical ID
     if (!entity && cleanRawId) {
       try {
         entity = await client.getEntity(`-100${cleanRawId}`);

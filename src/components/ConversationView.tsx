@@ -72,7 +72,12 @@ export function ConversationView({ contact, onBack, onMessageSent, onRemoveConta
   const fetchConversation = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(contact.id)}`, {
+      const params = new URLSearchParams({
+        peerId: contact.id,
+        username: contact.username || '',
+        name: contact.firstName || '',
+      });
+      const res = await fetch(`/api/messages?${params.toString()}`, {
         headers: getAuthHeaders(),
       });
       const data = await res.json();

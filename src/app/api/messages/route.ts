@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPeerMessages, addMessageToPeer, markPeerAsRead, getApprovedContacts, getApprovedChannels } from '@/lib/db';
+import { getPeerMessages, addMessageToPeer, markPeerAsRead, getApprovedContacts, getApprovedChannels, addApprovedChannel } from '@/lib/db';
 import { sendTelegramMessage, syncMessagesFromTelegram } from '@/lib/telegram';
-import { Message } from '@/lib/types';
+import { Message, ApprovedChannel } from '@/lib/types';
 import { resolveSession } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
@@ -12,6 +12,8 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const peerId = searchParams.get('peerId');
+    const queryUsername = (searchParams.get('username') || '').replace(/^@/, '').trim();
+    const queryTitle = (searchParams.get('title') || '').trim();
 
     if (!peerId) {
       return NextResponse.json(
@@ -32,24 +34,49 @@ export async function GET(req: NextRequest) {
     const targetChannel = channels.find(ch =>
       ch.id === peerId ||
       ch.username.toLowerCase() === cleanId ||
-      ch.id.toLowerCase() === `channel-${cleanId}`
+      ch.id.toLowerCase() === `channel-${cleanId}` ||
+      (queryUsername && ch.username.toLowerCase() === queryUsername.toLowerCase())
     );
+
+    // If client supplied channel details and it's missing in this lambda's local memory, register it
+    if (!targetChannel && !targetContact && queryUsername) {
+      const autoChannel: ApprovedChannel = {
+        id: peerId,
+        username: queryUsername,
+        title: queryTitle || queryUsername,
+        about: `@${queryUsername}`,
+        notificationsEnabled: true,
+        addedAt: new Date().toISOString(),
+        lastPostAt: new Date().toISOString(),
+        hasNewPost: false,
+        isGroup: false,
+        isPrivate: false,
+      };
+      addApprovedChannel(autoChannel);
+    }
 
     // 1. Immediately retrieve locally cached messages for instant rendering
     let messages = getPeerMessages(peerId);
 
-    // 2. If connected to real Telegram, attempt live sync with 20s timeout
-    if (session && !session.isDemoMode && session.isConnected && session.sessionString && (targetContact || targetChannel)) {
+    // 2. If connected to real Telegram, live sync with 20s timeout
+    const syncUser = queryUsername || targetContact?.username || targetChannel?.username || '';
+    const syncId = targetContact?.id || targetChannel?.id || peerId;
+
+    if (session && !session.isDemoMode && session.isConnected && session.sessionString) {
       try {
-        const syncId = targetContact?.id || targetChannel?.id || peerId;
-        const syncUser = targetContact?.username || targetChannel?.username || '';
         const syncPromise = syncMessagesFromTelegram(syncId, syncUser, session.sessionString);
         const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 20000));
-        await Promise.race([syncPromise, timeoutPromise]);
-        // Refresh messages in case new ones were saved
-        messages = getPeerMessages(peerId);
+        const syncedMessages = (await Promise.race([syncPromise, timeoutPromise])) as Message[];
+        if (Array.isArray(syncedMessages) && syncedMessages.length > 0) {
+          messages = syncedMessages;
+        } else if (messages.length === 0) {
+          messages = getPeerMessages(peerId);
+        }
       } catch (syncErr) {
         console.warn('Real-time Telegram sync warning (continuing with cached messages):', syncErr);
+        if (messages.length === 0) {
+          messages = getPeerMessages(peerId);
+        }
       }
     }
 

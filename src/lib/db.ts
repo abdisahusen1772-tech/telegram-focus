@@ -266,26 +266,30 @@ export function togglePinChannel(id: string): boolean {
 // Messages Helpers
 export function getPeerMessages(peerId: string): Message[] {
   const db = getDb();
-  const cleanId = peerId.toLowerCase().replace(/^@/, '');
+  const cleanId = peerId.toLowerCase().replace(/^@/, '').replace(/^contact-/, '').replace(/^channel-/, '');
   const matchedContact = db.contacts.find(c =>
-    c.id.toLowerCase() === cleanId ||
-    c.username.toLowerCase() === cleanId ||
-    c.id.toLowerCase() === `contact-${cleanId}`
+    c.id.toLowerCase() === peerId.toLowerCase() ||
+    c.id.toLowerCase() === `contact-${cleanId}` ||
+    c.username.toLowerCase() === cleanId
   );
   const matchedChannel = db.channels.find(ch =>
-    ch.id.toLowerCase() === cleanId ||
-    ch.username.toLowerCase() === cleanId ||
-    ch.id.toLowerCase() === `channel-${cleanId}`
+    ch.id.toLowerCase() === peerId.toLowerCase() ||
+    ch.id.toLowerCase() === `channel-${cleanId}` ||
+    ch.username.toLowerCase() === cleanId
   );
   const targetId = matchedContact?.id || matchedChannel?.id || peerId;
 
   return db.messages
-    .filter(m =>
-      m.peerId === targetId ||
-      m.peerId === peerId ||
-      (matchedContact && (m.peerId === matchedContact.username || m.peerId === `@${matchedContact.username}`)) ||
-      (matchedChannel && (m.peerId === matchedChannel.username || m.peerId === `@${matchedChannel.username}`))
-    )
+    .filter(m => {
+      const mClean = m.peerId.toLowerCase().replace(/^@/, '').replace(/^contact-/, '').replace(/^channel-/, '');
+      return (
+        m.peerId === targetId ||
+        m.peerId === peerId ||
+        mClean === cleanId ||
+        (matchedContact && (m.peerId === matchedContact.username || m.peerId === `@${matchedContact.username}` || mClean === matchedContact.username.toLowerCase())) ||
+        (matchedChannel && (m.peerId === matchedChannel.username || m.peerId === `@${matchedChannel.username}` || mClean === matchedChannel.username.toLowerCase()))
+      );
+    })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 

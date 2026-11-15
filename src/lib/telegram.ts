@@ -618,6 +618,7 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
 
   try {
     const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim().toLowerCase() : '';
+    const rawUsername = peerUsername ? peerUsername.replace(/^@/, '').trim() : '';
     const cleanRawId = peerId
       .replace(/^contact-/, '')
       .replace(/^channel-/, '')
@@ -629,11 +630,15 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
     let entity: unknown = null;
 
     // 1. Try resolving by public username first (instant MTProto resolution)
-    if (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+    if (rawUsername && !rawUsername.startsWith('user_') && !rawUsername.startsWith('private_')) {
       try {
-        entity = await client.getEntity(cleanUsername);
+        entity = await client.getEntity(rawUsername);
       } catch {
-        // Fall back to dialog enumeration
+        try {
+          entity = await client.getEntity(cleanUsername);
+        } catch {
+          // Fall back to dialog enumeration
+        }
       }
     }
 
@@ -673,28 +678,70 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       }
     }
 
-    if (!entity) {
-      console.warn(`Could not resolve entity for peerId: ${peerId}, username: ${peerUsername}`);
+    // 4. Fallback: try getMessages directly with username if entity could not be resolved via getEntity
+    let tgMessages: unknown[] = [];
+    if (entity) {
+      tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], { limit: 50 });
+    } else if (rawUsername && !rawUsername.startsWith('user_') && !rawUsername.startsWith('private_')) {
+      try {
+        tgMessages = await client.getMessages(rawUsername, { limit: 50 });
+      } catch {
+        try {
+          tgMessages = await client.getMessages(cleanUsername, { limit: 50 });
+        } catch (mErr) {
+          console.warn('Direct username getMessages notice:', mErr);
+        }
+      }
+    }
+
+    if (!tgMessages || tgMessages.length === 0) {
+      console.warn(`No messages returned for peerId: ${peerId}, username: ${peerUsername}`);
       return [];
     }
 
-    const tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], { limit: 50 });
-    const me = (await client.getMe()) as unknown as { id: { toString: () => string }; firstName?: string };
-    const myId = me?.id ? me.id.toString() : 'me';
+    const myId = 'me';
 
     const synced: Message[] = [];
     for (const msg of tgMessages) {
-      const textContent = (msg as unknown as { message?: string }).message || '';
-      const mediaObj = (msg as unknown as { media?: { className?: string } }).media;
+      const msgObj = msg as Record<string, any>;
+      let textContent = msgObj.message || msgObj.text || '';
+      const mediaObj = msgObj.media;
+      const fwdObj = msgObj.fwdFrom || msgObj.forward;
+
+      // Extract poll / quiz questions and options (e.g. Ethiopian trivia quiz from user screenshot)
+      if (mediaObj && (mediaObj.className === 'MessageMediaPoll' || mediaObj.poll)) {
+        const poll = mediaObj.poll;
+        const q = poll?.question?.text || poll?.question || 'Quiz / Poll';
+        const answers = (poll?.answers || []).map((a: any) => `• ${a.text?.text || a.text || ''}`).join('\n');
+        textContent = `📊 ${q}${answers ? '\n' + answers : ''}${textContent ? '\n\n' + textContent : ''}`;
+      }
+
+      // Extract webpage previews
+      if (mediaObj && mediaObj.className === 'MessageMediaWebPage' && mediaObj.webpage) {
+        const wp = mediaObj.webpage;
+        const titleOrDesc = [wp.title, wp.description].filter(Boolean).join('\n');
+        if (titleOrDesc && !textContent.includes(titleOrDesc)) {
+          textContent = textContent ? `${textContent}\n\n🔗 ${titleOrDesc}` : `🔗 ${titleOrDesc}`;
+        }
+      }
+
+      // Extract forwarded message attribution (e.g. "Forwarded from Qualitymovbot" from screenshot)
+      if (fwdObj) {
+        const fwdName = fwdObj.fromName || (fwdObj.channelPost ? 'Channel post' : undefined);
+        if (fwdName) {
+          textContent = `↪ Forwarded from ${fwdName}\n${textContent}`;
+        }
+      }
+
       if (!textContent && !mediaObj) continue;
 
-      const isOut = Boolean((msg as unknown as { out?: boolean }).out);
-      const unixDate = (msg as unknown as { date: number }).date;
+      const isOut = Boolean(msgObj.out);
+      const unixDate = msgObj.date;
       const mDate = unixDate ? new Date(unixDate * 1000).toISOString() : new Date().toISOString();
-      const msgId = (msg as unknown as { id: number }).id;
+      const msgId = msgObj.id;
 
-      // Extract sender's actual display name (especially useful for group chats)
-      const senderObj = (msg as unknown as { sender?: { firstName?: string; lastName?: string; title?: string } }).sender;
+      // Extract sender display name
+      const senderObj = msgObj.sender;
       let senderDisplayName = isOut ? 'You' : '';
       if (!isOut) {
         if (senderObj?.firstName) {
@@ -702,7 +749,7 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
         } else if (senderObj?.title) {
           senderDisplayName = senderObj.title;
         } else {
-          senderDisplayName = cleanUsername || 'Member';
+          senderDisplayName = rawUsername || cleanUsername || 'Channel';
         }
       }
 
@@ -718,7 +765,7 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
           mediaType = 'image';
           mediaName = 'Photo';
         } else if (isDoc) {
-          const doc = (mediaObj as unknown as { document?: { mimeType?: string; size?: number } })?.document;
+          const doc = mediaObj.document;
           const mime = doc?.mimeType || '';
           if (mime.startsWith('image/')) {
             mediaType = 'image';
@@ -742,7 +789,7 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
           type: mediaType,
           name: mediaName,
           size: mediaSize,
-          url: `/api/telegram/media?peerId=${encodeURIComponent(peerId)}&messageId=${msgId}`,
+          url: `/api/telegram/media?peerId=${encodeURIComponent(peerId)}&messageId=${msgId}&username=${encodeURIComponent(rawUsername || cleanUsername)}`,
         };
       }
 
@@ -759,8 +806,15 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       synced.push(newMsg);
     }
 
+    // Sort chronologically (oldest at top, newest at bottom, just like Telegram)
+    synced.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
     if (synced.length > 0) {
       saveRealTelegramMessages(peerId, synced);
+      if (cleanUsername) {
+        saveRealTelegramMessages(`channel-${cleanUsername}`, synced);
+        saveRealTelegramMessages(cleanUsername, synced);
+      }
     }
 
     return synced;

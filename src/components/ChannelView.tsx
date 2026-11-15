@@ -71,7 +71,12 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
   const fetchChannelPosts = async (isManual = false) => {
     if (isManual) setRefreshing(true);
     try {
-      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(channel.id)}`, {
+      const params = new URLSearchParams({
+        peerId: channel.id,
+        username: channel.username || '',
+        title: channel.title || '',
+      });
+      const res = await fetch(`/api/messages?${params.toString()}`, {
         headers: getAuthHeaders(),
       });
       const data = await res.json();
@@ -248,10 +253,12 @@ export function ChannelView({ channel, onBack, onNotificationToggled, onRemoveCh
 
       {/* About Box if provided and contains genuine description */}
       {channel.about &&
+        channel.about.trim() !== `@${channel.username}` &&
+        channel.about.trim() !== channel.username &&
         !channel.about.toLowerCase().includes('private telegram') &&
         !channel.about.toLowerCase().includes('telegram channel') &&
         !channel.about.toLowerCase().includes('telegram group') && (
-        <div className="px-4 py-2.5 bg-white/70 border-b border-stone-200/80 text-xs text-stone-600 leading-relaxed font-sans">
+        <div className="px-4 py-2 bg-white/70 border-b border-stone-200/80 text-xs text-stone-600 leading-relaxed font-sans">
           {channel.about}
         </div>
       )}
