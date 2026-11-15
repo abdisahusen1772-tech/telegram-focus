@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock, FileText, Download, X, Paperclip, Camera, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock, FileText, Download, X, Paperclip, Camera, Image as ImageIcon, RefreshCw } from 'lucide-react';
 import { ApprovedChannel, Message } from '@/lib/types';
 
 interface ChannelViewProps {
@@ -16,6 +16,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
   const [sending, setSending] = useState(false);
   const [notificationsOn, setNotificationsOn] = useState(channel.notificationsEnabled);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [selectedMedia, setSelectedMedia] = useState<{
     type: 'image' | 'document';
@@ -66,7 +67,8 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
     return headers;
   };
 
-  const fetchChannelPosts = async () => {
+  const fetchChannelPosts = async (isManual = false) => {
+    if (isManual) setRefreshing(true);
     try {
       const res = await fetch(`/api/messages?peerId=${encodeURIComponent(channel.id)}`, {
         headers: getAuthHeaders(),
@@ -79,6 +81,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
       console.error('Error fetching channel posts:', e);
     } finally {
       setLoading(false);
+      if (isManual) setRefreshing(false);
     }
   };
 
@@ -116,6 +119,8 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
 
   useEffect(() => {
     fetchChannelPosts();
+    const interval = setInterval(() => fetchChannelPosts(false), 8000);
+    return () => clearInterval(interval);
   }, [channel.id]);
 
   const toggleNotifications = async () => {
@@ -178,28 +183,39 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
           </div>
         </div>
 
-        {/* Per-Channel Notification Toggle */}
-        <button
-          onClick={toggleNotifications}
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-[11px] font-mono transition-all duration-150 cursor-pointer border ${
-            notificationsOn
-              ? 'bg-stone-900 text-stone-50 border-stone-900 hover:bg-stone-800'
-              : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200'
-          }`}
-          title={notificationsOn ? 'Notifications Active' : 'Notifications Muted'}
-        >
-          {notificationsOn ? (
-            <>
-              <Bell className="w-3.5 h-3.5 text-emerald-400" />
-              <span>NOTIFS ON</span>
-            </>
-          ) : (
-            <>
-              <BellOff className="w-3.5 h-3.5 text-stone-400" />
-              <span>MUTED</span>
-            </>
-          )}
-        </button>
+        <div className="flex items-center space-x-1.5">
+          <button
+            onClick={() => fetchChannelPosts(true)}
+            disabled={refreshing}
+            className="p-1.5 text-stone-400 hover:text-stone-700 rounded-md hover:bg-stone-100 transition cursor-pointer"
+            title="Sync latest posts"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-stone-700' : ''}`} />
+          </button>
+
+          {/* Per-Channel Notification Toggle */}
+          <button
+            onClick={toggleNotifications}
+            className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-mono transition-all duration-150 cursor-pointer border ${
+              notificationsOn
+                ? 'bg-stone-900 text-stone-50 border-stone-900 hover:bg-stone-800'
+                : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200'
+            }`}
+            title={notificationsOn ? 'Notifications Active' : 'Notifications Muted'}
+          >
+            {notificationsOn ? (
+              <>
+                <Bell className="w-3.5 h-3.5 text-emerald-400" />
+                <span>NOTIFS ON</span>
+              </>
+            ) : (
+              <>
+                <BellOff className="w-3.5 h-3.5 text-stone-400" />
+                <span>MUTED</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Distraction-Free Notification Guarantee Banner */}
@@ -225,9 +241,15 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
             <span>Loading verified dispatches...</span>
           </div>
         ) : posts.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-400 max-w-xs mx-auto">
-            <Radio className="w-8 h-8 text-stone-300 mb-2 stroke-1" />
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-stone-400 max-w-xs mx-auto space-y-3">
+            <Radio className="w-8 h-8 text-stone-300 stroke-1 mx-auto" />
             <p className="text-xs">No posts currently available in this channel.</p>
+            <button
+              onClick={() => fetchChannelPosts(true)}
+              className="text-[11px] font-mono text-stone-700 underline hover:text-black cursor-pointer"
+            >
+              ↻ Refresh Telegram Posts
+            </button>
           </div>
         ) : (
           posts.map((post) => (
@@ -236,7 +258,9 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
               className="bg-white border border-stone-200/90 rounded-xl p-4 shadow-2xs space-y-2.5 transition-all duration-150 hover:border-stone-300"
             >
               <div className="flex items-center justify-between text-[11px] font-mono text-stone-400 border-b border-stone-100 pb-2">
-                <span className="font-medium text-stone-600">{channel.title}</span>
+                <span className="font-medium text-stone-600">
+                  {channel.isGroup && post.senderName ? post.senderName : channel.title}
+                </span>
                 <time>{formatDate(post.date)}</time>
               </div>
 
@@ -354,7 +378,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder={`Message ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`}
-            className="flex-1 px-3 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
+            className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
           />
 
           <button

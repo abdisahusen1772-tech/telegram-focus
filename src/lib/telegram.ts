@@ -1,6 +1,6 @@
 import { TelegramClient, Api, sessions } from 'telegram';
 const { StringSession } = sessions;
-import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages, getApprovedContacts, updateContactStatus, addApprovedContact } from './db';
+import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages, getApprovedContacts, updateContactStatus, addApprovedContact, getPeerMessages } from './db';
 import { ApprovedContact, ApprovedChannel, Message, UserSession } from './types';
 
 // In-memory active client reference
@@ -488,20 +488,28 @@ export async function sendTelegramMessage(
   const client = await getOrInitTelegramClient(customSessionString);
   if (client && client.connected) {
     try {
-      const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim() : '';
-      const rawId = peerUsername.replace(/^contact-/, '').replace(/^channel-/, '').replace(/^user_/, '');
+      const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim().toLowerCase() : '';
+      const cleanRawId = peerUsername
+        .replace(/^contact-/, '')
+        .replace(/^channel-/, '')
+        .replace(/^user_/, '')
+        .replace(/^private_/, '')
+        .replace(/^-100/, '')
+        .replace(/^-/, '')
+        .toLowerCase();
       let entity: unknown = null;
 
       // 1. Search dialogs first (contains pre-resolved inputEntity with accessHash)
       try {
-        const dialogs = await client.getDialogs({ limit: 100 });
+        const dialogs = await client.getDialogs({ limit: 150 });
         const matched = dialogs.find((d) => {
-          const dId = d.id ? d.id.toString() : '';
-          const dEntity = d.entity as { username?: string } | undefined;
+          const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
+          const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
+          const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+          const dUser = dEntity?.username?.toLowerCase();
           return (
-            dId === rawId ||
-            dId === peerUsername ||
-            (cleanUsername && !cleanUsername.startsWith('user_') && dEntity?.username?.toLowerCase() === cleanUsername.toLowerCase())
+            cleanDId === cleanRawId ||
+            (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
           );
         });
         if (matched) {
@@ -520,12 +528,16 @@ export async function sendTelegramMessage(
         }
       }
 
-      // 3. Fallback: try getEntity by numeric ID
-      if (!entity && rawId) {
+      // 3. Fallback: try getEntity by numeric ID (-100 and clean)
+      if (!entity && cleanRawId) {
         try {
-          entity = await client.getEntity(rawId);
+          entity = await client.getEntity(`-100${cleanRawId}`);
         } catch {
-          // ignore
+          try {
+            entity = await client.getEntity(cleanRawId);
+          } catch {
+            // ignore
+          }
         }
       }
 
@@ -567,25 +579,61 @@ export async function sendTelegramMessage(
  * Fetch live messages from real Telegram account for an approved contact or channel
  */
 export async function syncMessagesFromTelegram(peerId: string, peerUsername: string, customSessionString?: string): Promise<Message[]> {
+  const isDemo = !customSessionString || customSessionString.startsWith('mock_') || customSessionString.startsWith('demo_');
+  if (isDemo) {
+    const cached = getPeerMessages(peerId);
+    if (cached.length > 0) return cached;
+
+    // Seed informative starter dispatches for channels/groups in demo mode
+    const demoMessages: Message[] = [
+      {
+        id: `demo-${peerId}-1`,
+        peerId,
+        senderId: peerId,
+        senderName: peerUsername || 'Channel',
+        isOutgoing: false,
+        text: 'Welcome to this channel. All posts, announcements, and media shared here are streamed directly to your focus view.',
+        date: new Date(Date.now() - 3600000 * 3).toISOString(),
+      },
+      {
+        id: `demo-${peerId}-2`,
+        peerId,
+        senderId: peerId,
+        senderName: peerUsername || 'Channel',
+        isOutgoing: false,
+        text: 'Focus mode is active: notifications are preview-free and unread indicators appear only when deliberate attention is warranted.',
+        date: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+      },
+    ];
+    saveRealTelegramMessages(peerId, demoMessages);
+    return demoMessages;
+  }
+
   const client = await getOrInitTelegramClient(customSessionString);
   if (!client || !client.connected) {
     return [];
   }
 
   try {
-    const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim() : '';
-    const rawId = peerId.replace(/^contact-/, '').replace(/^channel-/, '');
+    const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim().toLowerCase() : '';
+    const cleanRawId = peerId
+      .replace(/^contact-/, '')
+      .replace(/^channel-/, '')
+      .replace(/^-100/, '')
+      .replace(/^-/, '')
+      .toLowerCase();
     let entity: unknown = null;
 
     // Search dialogs first because dialogs contain pre-resolved InputEntity with valid accessHash!
-    const dialogs = await client.getDialogs({ limit: 120 });
+    const dialogs = await client.getDialogs({ limit: 150 });
     const matched = dialogs.find((d) => {
-      const dId = d.id ? d.id.toString() : '';
-      const dEntity = d.entity as { username?: string } | undefined;
+      const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string; title?: string };
+      const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
+      const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+      const dUser = dEntity?.username?.toLowerCase();
       return (
-        dId === rawId ||
-        dId === peerId ||
-        (cleanUsername && !cleanUsername.startsWith('user_') && dEntity?.username?.toLowerCase() === cleanUsername.toLowerCase())
+        cleanDId === cleanRawId ||
+        (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
       );
     });
 
@@ -602,12 +650,16 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       }
     }
 
-    // Fallback: try resolving by numerical ID
-    if (!entity) {
+    // Fallback: try resolving by numerical ID (-100 and clean)
+    if (!entity && cleanRawId) {
       try {
-        entity = await client.getEntity(rawId);
+        entity = await client.getEntity(`-100${cleanRawId}`);
       } catch {
-        // ignore
+        try {
+          entity = await client.getEntity(cleanRawId);
+        } catch {
+          // ignore
+        }
       }
     }
 
@@ -630,6 +682,19 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       const unixDate = (msg as unknown as { date: number }).date;
       const mDate = unixDate ? new Date(unixDate * 1000).toISOString() : new Date().toISOString();
       const msgId = (msg as unknown as { id: number }).id;
+
+      // Extract sender's actual display name (especially useful for group chats)
+      const senderObj = (msg as unknown as { sender?: { firstName?: string; lastName?: string; title?: string } }).sender;
+      let senderDisplayName = isOut ? 'You' : '';
+      if (!isOut) {
+        if (senderObj?.firstName) {
+          senderDisplayName = `${senderObj.firstName} ${senderObj.lastName || ''}`.trim();
+        } else if (senderObj?.title) {
+          senderDisplayName = senderObj.title;
+        } else {
+          senderDisplayName = cleanUsername || 'Member';
+        }
+      }
 
       let parsedMedia = undefined;
       if (mediaObj) {
@@ -675,7 +740,7 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
         id: `tg-${peerId}-${msgId}`,
         peerId,
         senderId: isOut ? myId : peerId,
-        senderName: isOut ? 'You' : (cleanUsername || 'Contact'),
+        senderName: senderDisplayName,
         isOutgoing: isOut,
         text: textContent || (parsedMedia ? `📎 [${parsedMedia.name}]` : ''),
         date: mDate,
@@ -892,38 +957,76 @@ export async function postTelegramStory(params: {
 }
 
 /**
- * Synchronize real Telegram unread message status strictly for approved contacts
+ * Synchronize real Telegram unread status:
+ * 1. If any real PERSON sends a direct message (1-on-1 chat), it automatically arrives in the app with unread status so the user can read and reply.
+ * 2. Strictly excludes channels and groups from auto-adding (channels/groups only appear if user approved them).
  */
 export async function syncContactUnreadStatusFromTelegram(customSessionString?: string): Promise<void> {
   const client = await getOrInitTelegramClient(customSessionString);
   if (!client || !client.connected) return;
 
   try {
-    const dialogs = await client.getDialogs({ limit: 100 });
-    const contacts = getApprovedContacts();
+    const dialogs = await client.getDialogs({ limit: 120 });
+    const approvedContacts = getApprovedContacts();
+    const approvedMap = new Map<string, ApprovedContact>();
 
-    // STRICT VIP FILTERING: Only sync unread state for contacts the user explicitly approved!
-    for (const contact of contacts) {
-      const cleanUsername = contact.username.toLowerCase().replace(/^@/, '');
-      const cleanId = contact.id.toLowerCase().replace(/^contact-/, '');
+    for (const c of approvedContacts) {
+      const cleanId = c.id.replace(/^contact-/, '').replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+      approvedMap.set(cleanId, c);
+      if (c.username) {
+        approvedMap.set(c.username.toLowerCase().replace(/^@/, ''), c);
+      }
+    }
 
-      const matched = dialogs.find((d) => {
-        const entity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
-        const dUser = entity?.username?.toLowerCase();
-        const dId = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
-        return (dUser && dUser === cleanUsername) || (dId && (dId === cleanId || dId === contact.id));
-      });
+    // Process all 1-on-1 person chats (d.isUser === true)
+    for (const d of dialogs) {
+      // STRICT FILTER: Only real individual people! Never auto-import channels or groups!
+      if (!d.isUser) continue;
+      if (d.id && d.id.toString() === '777000') continue; // Skip Telegram service notifications
 
-      if (matched) {
-        const count = matched.unreadCount || 0;
-        if (count > 0) {
-          updateContactStatus(contact.id, 'new_message', count);
-        } else {
-          updateContactStatus(contact.id, 'no_new_message', 0);
-        }
-      } else {
-        // Contact has no active unread dialog in Telegram
-        updateContactStatus(contact.id, 'no_new_message', 0);
+      const entity = d.entity as unknown as {
+        id?: { toString: () => string };
+        firstName?: string;
+        lastName?: string;
+        username?: string;
+        phone?: string;
+      };
+
+      const dIdStr = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
+      if (!dIdStr) continue;
+
+      const cleanId = dIdStr.replace(/^-100/, '').replace(/^-/, '');
+      const dUsername = entity?.username ? entity.username.replace(/^@/, '').trim() : '';
+      const existing = approvedMap.get(cleanId.toLowerCase()) ||
+        (dUsername ? approvedMap.get(dUsername.toLowerCase()) : undefined);
+
+      const unreadCount = d.unreadCount || 0;
+      const status = unreadCount > 0 ? ('new_message' as const) : ('no_new_message' as const);
+
+      if (existing) {
+        updateContactStatus(existing.id, status, unreadCount);
+      } else if (unreadCount > 0 || (d.message && !d.isChannel && !d.isGroup)) {
+        // Direct message from an individual person: automatically bring them into the app so user can read and reply!
+        let displayName = `${entity?.firstName || ''} ${entity?.lastName || ''}`.trim();
+        if (!displayName && d.title) displayName = d.title.trim();
+        if (!displayName) displayName = dUsername || `User ${cleanId}`;
+
+        const newContact: ApprovedContact = {
+          id: `contact-${cleanId}`,
+          username: dUsername || `user_${cleanId}`,
+          firstName: displayName,
+          lastName: '',
+          phone: entity?.phone || '',
+          status,
+          unreadCount,
+          notificationsEnabled: true,
+          addedAt: new Date().toISOString(),
+          lastMessageAt: new Date().toISOString(),
+        };
+
+        addApprovedContact(newContact);
+        approvedMap.set(cleanId.toLowerCase(), newContact);
+        if (dUsername) approvedMap.set(dUsername.toLowerCase(), newContact);
       }
     }
   } catch (err) {

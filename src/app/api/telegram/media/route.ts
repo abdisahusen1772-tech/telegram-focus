@@ -22,20 +22,26 @@ export async function GET(req: NextRequest) {
       return new NextResponse('Not connected to Telegram', { status: 401 });
     }
 
-    const cleanUsername = peerId.replace(/^contact-/, '').replace(/^channel-/, '').replace(/^@/, '');
-    const rawId = peerId.replace(/^contact-/, '').replace(/^channel-/, '');
+    const cleanUsername = peerId.replace(/^contact-/, '').replace(/^channel-/, '').replace(/^@/, '').toLowerCase();
+    const cleanRawId = peerId
+      .replace(/^contact-/, '')
+      .replace(/^channel-/, '')
+      .replace(/^-100/, '')
+      .replace(/^-/, '')
+      .toLowerCase();
 
     // Resolve entity via dialogs (has inputEntity with accessHash)
     let entity: unknown = null;
     try {
-      const dialogs = await client.getDialogs({ limit: 120 });
+      const dialogs = await client.getDialogs({ limit: 150 });
       const matched = dialogs.find((d) => {
-        const dId = d.id ? d.id.toString() : '';
-        const dEntity = d.entity as { username?: string } | undefined;
+        const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
+        const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
+        const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
+        const dUser = dEntity?.username?.toLowerCase();
         return (
-          dId === rawId ||
-          dId === peerId ||
-          (cleanUsername && !cleanUsername.startsWith('user_') && dEntity?.username?.toLowerCase() === cleanUsername.toLowerCase())
+          cleanDId === cleanRawId ||
+          (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
         );
       });
       if (matched) {
@@ -45,12 +51,20 @@ export async function GET(req: NextRequest) {
       // ignore
     }
 
-    if (!entity) {
+    if (!entity && cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
       try {
         entity = await client.getEntity(cleanUsername);
       } catch {
+        // ignore
+      }
+    }
+
+    if (!entity && cleanRawId) {
+      try {
+        entity = await client.getEntity(`-100${cleanRawId}`);
+      } catch {
         try {
-          entity = await client.getEntity(rawId);
+          entity = await client.getEntity(cleanRawId);
         } catch {}
       }
     }
