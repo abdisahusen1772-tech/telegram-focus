@@ -125,9 +125,9 @@ export async function POST(req: NextRequest) {
     const saved = addMessageToPeer(newMessage);
 
     // If connected to real Telegram, dispatch to recipient contact or group
-    const targetIdentifier = targetContact?.username || targetChannel?.username;
-    if (session && !session.isDemoMode && targetIdentifier) {
-      await sendTelegramMessage(targetIdentifier, (text || '').trim(), hasMedia ? media : undefined);
+    const targetIdentifier = targetContact?.username || targetContact?.id || targetChannel?.username || targetChannel?.id;
+    if (session && !session.isDemoMode && targetIdentifier && session.sessionString) {
+      await sendTelegramMessage(targetIdentifier, (text || '').trim(), hasMedia ? media : undefined, session.sessionString);
     }
 
     return NextResponse.json({

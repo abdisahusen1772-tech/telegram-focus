@@ -23,13 +23,15 @@ export function resolveSession(req?: NextRequest): UserSession | null {
       const cleanSessionStr = headerSessionStr.trim();
       const userId = req.headers.get('x-telegram-user-id') || session?.userId || 'tg-user';
       const firstName = req.headers.get('x-telegram-first-name') || session?.firstName || 'Telegram User';
+      const phone = req.headers.get('x-telegram-phone') || session?.phone || '';
+      const username = req.headers.get('x-telegram-username') || session?.username || '';
 
       const restored: UserSession = {
         userId,
         firstName: decodeURIComponent(firstName),
         lastName: session?.lastName || '',
-        username: session?.username || '',
-        phone: session?.phone || '',
+        username,
+        phone,
         sessionString: cleanSessionStr,
         isConnected: true,
         isDemoMode: false,
@@ -56,5 +58,9 @@ export function resolveSession(req?: NextRequest): UserSession | null {
     }
   }
 
-  return session;
+  if (session && session.isConnected && session.sessionString && session.sessionString.length > 20) {
+    return session;
+  }
+
+  return null;
 }

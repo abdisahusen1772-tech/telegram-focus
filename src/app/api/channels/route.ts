@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getApprovedChannels, addApprovedChannel, removeApprovedChannel, updateChannelNotifications, togglePinChannel } from '@/lib/db';
 import { verifyTelegramUsername } from '@/lib/telegram';
 import { ApprovedChannel } from '@/lib/types';
+import { resolveSession } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,7 +59,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const verification = await verifyTelegramUsername(username);
+    const session = resolveSession(req);
+    const verification = await verifyTelegramUsername(username, session?.sessionString);
 
     if (!verification.success) {
       return NextResponse.json(

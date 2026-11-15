@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const session = getUserSession();
+    const session = result.session || getUserSession();
     const response = NextResponse.json({
       success: true,
       session,

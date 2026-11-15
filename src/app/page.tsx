@@ -70,11 +70,25 @@ export default function TelegramFocusApp() {
   const [lastSyncedTime, setLastSyncedTime] = useState<string>('');
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Helper to retrieve localStorage session token
+  // Helper to retrieve localStorage session token & user details
   const getAuthHeaders = useCallback((): Record<string, string> => {
     if (typeof window === 'undefined') return {};
+    const headers: Record<string, string> = {};
     const token = localStorage.getItem('tg_focus_session');
-    return token ? { 'x-telegram-session': token } : {};
+    if (token) {
+      headers['x-telegram-session'] = token;
+    }
+    const savedUser = localStorage.getItem('tg_focus_user');
+    if (savedUser) {
+      try {
+        const u = JSON.parse(savedUser);
+        if (u.userId) headers['x-telegram-user-id'] = u.userId;
+        if (u.firstName) headers['x-telegram-first-name'] = encodeURIComponent(u.firstName);
+        if (u.phone) headers['x-telegram-phone'] = u.phone;
+        if (u.username) headers['x-telegram-username'] = u.username;
+      } catch {}
+    }
+    return headers;
   }, []);
 
   // Initial data loading
@@ -86,9 +100,18 @@ export default function TelegramFocusApp() {
       const authRes = await fetch('/api/auth/status', { headers: authHeaders });
       const authData = await authRes.json();
       if (authData.success) {
-        setSession(authData.session);
-        if (authData.session?.sessionString && typeof window !== 'undefined') {
-          localStorage.setItem('tg_focus_session', authData.session.sessionString);
+        if (authData.session && authData.session.isConnected) {
+          setSession(authData.session);
+          if (typeof window !== 'undefined') {
+            if (authData.session.sessionString) {
+              localStorage.setItem('tg_focus_session', authData.session.sessionString);
+            }
+            localStorage.setItem('tg_focus_user', JSON.stringify(authData.session));
+          }
+        } else if (typeof window !== 'undefined' && localStorage.getItem('tg_focus_session')) {
+          // If serverless is warming up but local token is present, maintain connected state
+        } else {
+          setSession(authData.session);
         }
         setIsApiConfigured(authData.isApiConfigured);
         if (authData.settings) {
@@ -167,6 +190,30 @@ export default function TelegramFocusApp() {
   }, [getAuthHeaders, settings.notificationsEnabled, settings.soundEnabled]);
 
   useEffect(() => {
+    // Instant hydration from localStorage on mount so UI never flickers "Disconnected"
+    if (typeof window !== 'undefined') {
+      const savedToken = localStorage.getItem('tg_focus_session');
+      const savedUserStr = localStorage.getItem('tg_focus_user');
+      if (savedToken && savedToken.length > 20) {
+        let initialUser: UserSession = {
+          userId: 'tg-user',
+          firstName: 'Telegram User',
+          phone: '',
+          sessionString: savedToken,
+          isConnected: true,
+          isDemoMode: false,
+          connectedAt: new Date().toISOString(),
+          lastSyncedAt: new Date().toISOString(),
+        };
+        if (savedUserStr) {
+          try {
+            initialUser = { ...initialUser, ...JSON.parse(savedUserStr), isConnected: true, sessionString: savedToken };
+          } catch {}
+        }
+        setSession(initialUser);
+      }
+    }
+
     loadData();
     requestNotificationPermission();
 
@@ -191,15 +238,15 @@ export default function TelegramFocusApp() {
     };
   }, [loadData]);
 
-  // Periodic background check for new contact messages (5s polling for snappy real-time updates)
+  // Periodic background check for new contact messages (12s interval avoids MTProto connection collision on serverless)
   useEffect(() => {
     const syncInterval = setInterval(() => {
-      if (!isOffline && typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      if (!isOffline && !isSyncing && typeof document !== 'undefined' && document.visibilityState === 'visible') {
         loadData();
       }
-    }, 5000);
+    }, 12000);
     return () => clearInterval(syncInterval);
-  }, [loadData, isOffline]);
+  }, [loadData, isOffline, isSyncing]);
 
   // Handle Theme Classes on document body
   useEffect(() => {
@@ -321,6 +368,7 @@ export default function TelegramFocusApp() {
       });
       if (typeof window !== 'undefined') {
         localStorage.removeItem('tg_focus_session');
+        localStorage.removeItem('tg_focus_user');
       }
       setSession(null);
     } catch (e) {

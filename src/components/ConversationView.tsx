@@ -72,7 +72,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
 
   useEffect(() => {
     fetchConversation();
-    const interval = setInterval(() => fetchConversation(false), 4000);
+    const interval = setInterval(() => fetchConversation(false), 7000);
     return () => clearInterval(interval);
   }, [contact.id]);
 

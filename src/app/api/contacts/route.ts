@@ -46,7 +46,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const verification = await verifyTelegramUsername(username);
+    const session = resolveSession(req);
+    const verification = await verifyTelegramUsername(username, session?.sessionString);
 
     if (!verification.success) {
       return NextResponse.json(

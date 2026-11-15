@@ -1,16 +1,5 @@
 {
-  "session": {
-    "userId": "1966911057",
-    "firstName": "~[ABDISA--",
-    "lastName": "HUSEIN]~",
-    "username": "Abdi1hu",
-    "phone": "251973301772",
-    "sessionString": "",
-    "isConnected": false,
-    "isDemoMode": false,
-    "connectedAt": "2026-10-01T06:04:12.633Z",
-    "lastSyncedAt": "2026-10-01T06:04:12.633Z"
-  },
+  "session": null,
   "contacts": [
     {
       "id": "contact-7519298092",

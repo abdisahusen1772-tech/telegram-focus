@@ -1,7 +1,7 @@
 import { TelegramClient, Api, sessions } from 'telegram';
 const { StringSession } = sessions;
 import { getUserSession, setUserSession, getApiCredentials, setApiCredentials, saveRealTelegramMessages, getApprovedContacts, updateContactStatus, addApprovedContact } from './db';
-import { ApprovedContact, ApprovedChannel, Message } from './types';
+import { ApprovedContact, ApprovedChannel, Message, UserSession } from './types';
 
 // In-memory active client reference
 let activeClient: TelegramClient | null = null;
@@ -30,12 +30,20 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
   const existingSession = getUserSession();
   const sessionString = customSessionString || existingSession?.sessionString || '';
 
-  if (!sessionString) {
+  if (!sessionString || sessionString.length < 15) {
     return null;
   }
 
+  // If activeClient exists and matches this session, reuse it
   if (activeClient && activeClient.connected) {
-    return activeClient;
+    try {
+      const currentSaved = activeClient.session.save() as unknown as string;
+      if (currentSaved === sessionString) {
+        return activeClient;
+      }
+    } catch {
+      // ignore
+    }
   }
 
   try {
@@ -57,14 +65,14 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
   } catch (err) {
     console.warn('Could not establish Telegram MTProto client connection:', err);
     const errStr = String(err);
+    // ONLY invalidate session if Telegram explicitly revoked the auth key or session
+    // NEVER invalidate on AUTH_KEY_DUPLICATED, which is just a temporary concurrent connection collision on serverless!
     if (
-      errStr.includes('AUTH_KEY_DUPLICATED') ||
       errStr.includes('AUTH_KEY_UNREGISTERED') ||
       errStr.includes('SESSION_REVOKED') ||
-      errStr.includes('406') ||
-      errStr.includes('401')
+      errStr.includes('SESSION_EXPIRED')
     ) {
-      console.warn('Telegram session key invalidated by Telegram DC (AUTH_KEY_DUPLICATED). Resetting session to disconnected.');
+      console.warn('Telegram session key revoked by Telegram DC. Resetting session to disconnected.');
       const current = getUserSession();
       if (current) {
         setUserSession({
@@ -90,7 +98,13 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
   error?: string;
   isMock?: boolean;
 }> {
-  const cleanPhone = phoneNumber.trim();
+  let cleanPhone = phoneNumber.trim().replace(/[\s\-\(\)]/g, '');
+  // Auto-format Ethiopian domestic numbers (09... or 07...) to international format +251...
+  if (/^0[79]\d{8}$/.test(cleanPhone)) {
+    cleanPhone = '+251' + cleanPhone.slice(1);
+  } else if (!cleanPhone.startsWith('+')) {
+    cleanPhone = '+' + cleanPhone;
+  }
 
   if (apiIdParam && apiHashParam) {
     setApiCredentials(apiIdParam, apiHashParam);
@@ -163,6 +177,7 @@ export async function signInWithTelegramCode(params: {
 }): Promise<{
   success: boolean;
   needs2FA?: boolean;
+  session?: UserSession;
   user?: {
     id: string;
     firstName: string;
@@ -252,6 +267,7 @@ export async function signInWithTelegramCode(params: {
 
       return {
         success: true,
+        session: userSession,
         user: {
           id: userSession.userId,
           firstName: userSession.firstName,
@@ -288,6 +304,7 @@ export async function signInWithTelegramCode(params: {
 
   return {
     success: true,
+    session: mockUserSession,
     user: {
       id: mockUserSession.userId,
       firstName: mockUserSession.firstName,
@@ -301,7 +318,7 @@ export async function signInWithTelegramCode(params: {
 /**
  * Phase 2 & 3: Verify and resolve username (contact or channel) via Telegram
  */
-export async function verifyTelegramUsername(rawUsername: string): Promise<{
+export async function verifyTelegramUsername(rawUsername: string, customSessionString?: string): Promise<{
   success: boolean;
   entityType?: 'contact' | 'channel' | 'group';
   contact?: ApprovedContact;
@@ -317,7 +334,7 @@ export async function verifyTelegramUsername(rawUsername: string): Promise<{
     };
   }
 
-  const client = await getOrInitTelegramClient();
+  const client = await getOrInitTelegramClient(customSessionString);
 
   if (client && client.connected) {
     try {
@@ -436,20 +453,64 @@ export async function verifyTelegramUsername(rawUsername: string): Promise<{
 export async function sendTelegramMessage(
   peerUsername: string,
   text: string,
-  media?: { type: 'image' | 'video' | 'voice' | 'document'; url: string; name?: string }
+  media?: { type: 'image' | 'video' | 'voice' | 'document'; url: string; name?: string },
+  customSessionString?: string
 ): Promise<boolean> {
-  const client = await getOrInitTelegramClient();
+  const client = await getOrInitTelegramClient(customSessionString);
   if (client && client.connected) {
     try {
-      const cleanUsername = peerUsername.replace(/^@/, '').trim();
-      const entity = await client.getEntity(cleanUsername);
+      const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim() : '';
+      const rawId = peerUsername.replace(/^contact-/, '').replace(/^channel-/, '').replace(/^user_/, '');
+      let entity: unknown = null;
+
+      // 1. Search dialogs first (contains pre-resolved inputEntity with accessHash)
+      try {
+        const dialogs = await client.getDialogs({ limit: 100 });
+        const matched = dialogs.find((d) => {
+          const dId = d.id ? d.id.toString() : '';
+          const dEntity = d.entity as { username?: string } | undefined;
+          return (
+            dId === rawId ||
+            dId === peerUsername ||
+            (cleanUsername && !cleanUsername.startsWith('user_') && dEntity?.username?.toLowerCase() === cleanUsername.toLowerCase())
+          );
+        });
+        if (matched) {
+          entity = matched.inputEntity || matched.entity;
+        }
+      } catch (dErr) {
+        console.warn('Dialog search notice in sendTelegramMessage:', dErr);
+      }
+
+      // 2. Fallback: try getEntity by clean username
+      if (!entity && cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+        try {
+          entity = await client.getEntity(cleanUsername);
+        } catch {
+          // ignore
+        }
+      }
+
+      // 3. Fallback: try getEntity by numeric ID
+      if (!entity && rawId) {
+        try {
+          entity = await client.getEntity(rawId);
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!entity) {
+        console.warn('Could not resolve entity to send Telegram message:', peerUsername);
+        return false;
+      }
 
       if (media && media.url && media.url.startsWith('data:')) {
         try {
           const matches = media.url.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
           if (matches && matches[2]) {
             const buffer = Buffer.from(matches[2], 'base64');
-            await client.sendFile(entity, {
+            await client.sendFile(entity as any, {
               file: buffer,
               caption: text || (media.name ? `📎 ${media.name}` : undefined),
               workers: 1,
@@ -461,7 +522,7 @@ export async function sendTelegramMessage(
         }
       }
 
-      await client.sendMessage(entity, {
+      await client.sendMessage(entity as any, {
         message: text + (media?.name ? `\n[Attached: ${media.name}]` : ''),
       });
       return true;

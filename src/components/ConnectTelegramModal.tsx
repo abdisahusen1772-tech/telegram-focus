@@ -47,9 +47,15 @@ export function ConnectTelegramModal({
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanPhone = phone.trim();
-    if (!cleanPhone) {
-      setError('Please enter your phone number with country code (e.g. +1 555 123 4567)');
+    let cleanPhone = phone.trim().replace(/[\s\-\(\)]/g, '');
+    if (/^0[79]\d{8}$/.test(cleanPhone)) {
+      cleanPhone = '+251' + cleanPhone.slice(1);
+    } else if (!cleanPhone.startsWith('+')) {
+      cleanPhone = '+' + cleanPhone;
+    }
+
+    if (!cleanPhone || cleanPhone.length < 8) {
+      setError('Please enter your phone number with country code (e.g. +251 973 301 772)');
       return;
     }
 
@@ -123,6 +129,9 @@ export function ConnectTelegramModal({
         const token = data.session?.sessionString || (typeof data.session === 'string' ? data.session : '');
         if (token) {
           localStorage.setItem('tg_focus_session', token);
+        }
+        if (data.session) {
+          localStorage.setItem('tg_focus_user', JSON.stringify(data.session));
         }
       }
 
