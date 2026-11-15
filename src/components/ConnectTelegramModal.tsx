@@ -45,20 +45,26 @@ export function ConnectTelegramModal({
 
   if (!isOpen) return null;
 
+  const formatCleanPhone = (raw: string): string => {
+    let clean = raw.trim().replace(/[\s\-\(\)]/g, '');
+    if (/^0[79]\d{8}$/.test(clean)) {
+      clean = '+251' + clean.slice(1);
+    } else if (!clean.startsWith('+')) {
+      clean = '+' + clean;
+    }
+    return clean;
+  };
+
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    let cleanPhone = phone.trim().replace(/[\s\-\(\)]/g, '');
-    if (/^0[79]\d{8}$/.test(cleanPhone)) {
-      cleanPhone = '+251' + cleanPhone.slice(1);
-    } else if (!cleanPhone.startsWith('+')) {
-      cleanPhone = '+' + cleanPhone;
-    }
+    const cleanPhone = formatCleanPhone(phone);
 
     if (!cleanPhone || cleanPhone.length < 8) {
       setError('Please enter your phone number with country code (e.g. +251 973 301 772)');
       return;
     }
 
+    setPhone(cleanPhone); // Update state to formatted phone
     setLoading(true);
     setError(null);
     setStatusNote(null);
@@ -83,7 +89,7 @@ export function ConnectTelegramModal({
       if (data.intermediateSession) {
         setIntermediateSession(data.intermediateSession);
       }
-      setStatusNote(data.message || 'Verification code sent to your Telegram app / SMS');
+      setStatusNote(data.message || `Verification code sent to ${cleanPhone} via Telegram / SMS`);
       setStep('code');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error sending code';
@@ -97,6 +103,7 @@ export function ConnectTelegramModal({
     e.preventDefault();
     if (!code.trim() || !phoneCodeHash) return;
 
+    const cleanPhone = formatCleanPhone(phone);
     setLoading(true);
     setError(null);
 
@@ -105,7 +112,7 @@ export function ConnectTelegramModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phoneNumber: phone.trim(),
+          phoneNumber: cleanPhone,
           phoneCode: code.trim(),
           phoneCodeHash,
           intermediateSession: intermediateSession || undefined,
@@ -154,6 +161,13 @@ export function ConnectTelegramModal({
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Failed to activate sandbox');
       }
+
+      if (typeof window !== 'undefined' && data.session) {
+        const token = data.session.sessionString || 'mock_session_token_' + Date.now();
+        localStorage.setItem('tg_focus_session', token);
+        localStorage.setItem('tg_focus_user', JSON.stringify(data.session));
+      }
+
       onConnected();
       onClose();
     } catch (err: unknown) {

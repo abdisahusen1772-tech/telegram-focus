@@ -111,9 +111,27 @@ export default function TelegramFocusApp() {
             localStorage.setItem('tg_focus_user', JSON.stringify(authData.session));
           }
         } else if (typeof window !== 'undefined' && localStorage.getItem('tg_focus_session')) {
-          // If serverless is warming up but local token is present, maintain connected state
+          // If serverless response is warming up but local token is present, maintain and restore connected session
+          const savedToken = localStorage.getItem('tg_focus_session')!;
+          const savedUserStr = localStorage.getItem('tg_focus_user');
+          let restored: UserSession = {
+            userId: 'tg-user',
+            firstName: 'Telegram User',
+            phone: '',
+            sessionString: savedToken,
+            isConnected: true,
+            isDemoMode: savedToken.startsWith('mock_') || savedToken.startsWith('demo_'),
+            connectedAt: new Date().toISOString(),
+            lastSyncedAt: new Date().toISOString(),
+          };
+          if (savedUserStr) {
+            try {
+              restored = { ...restored, ...JSON.parse(savedUserStr), isConnected: true, sessionString: savedToken };
+            } catch {}
+          }
+          setSession(restored);
         } else {
-          setSession(authData.session);
+          setSession(null);
         }
         setIsApiConfigured(authData.isApiConfigured);
         if (authData.settings) {

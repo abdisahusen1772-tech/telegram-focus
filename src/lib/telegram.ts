@@ -23,6 +23,7 @@ export function isTelegramApiConfigured(): boolean {
 export async function getOrInitTelegramClient(customSessionString?: string): Promise<TelegramClient | null> {
   const creds = getActiveApiCredentials();
   if (!creds) {
+    console.warn('Telegram API credentials not configured');
     return null;
   }
   const { apiId, apiHash } = creds;
@@ -30,7 +31,7 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
   const existingSession = getUserSession();
   const sessionString = customSessionString || existingSession?.sessionString || '';
 
-  if (!sessionString || sessionString.length < 15) {
+  if (!sessionString || sessionString.length < 15 || sessionString.startsWith('mock_') || sessionString.startsWith('demo_')) {
     return null;
   }
 
@@ -46,45 +47,67 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
     }
   }
 
-  try {
-    const stringSession = new StringSession(sessionString);
-    const client = new TelegramClient(stringSession, apiId, apiHash, {
-      connectionRetries: 2,
-      timeout: 8,
-      useWSS: false,
-    });
-
-    const connectPromise = client.connect();
-    const timeoutPromise = new Promise<void>((_, reject) =>
-      setTimeout(() => reject(new Error('MTProto connection timeout')), 8000)
-    );
-
-    await Promise.race([connectPromise, timeoutPromise]);
-    activeClient = client;
-    return client;
-  } catch (err) {
-    console.warn('Could not establish Telegram MTProto client connection:', err);
-    const errStr = String(err);
-    // ONLY invalidate session if Telegram explicitly revoked the auth key or session
-    // NEVER invalidate on AUTH_KEY_DUPLICATED, which is just a temporary concurrent connection collision on serverless!
-    if (
-      errStr.includes('AUTH_KEY_UNREGISTERED') ||
-      errStr.includes('SESSION_REVOKED') ||
-      errStr.includes('SESSION_EXPIRED')
-    ) {
-      console.warn('Telegram session key revoked by Telegram DC. Resetting session to disconnected.');
-      const current = getUserSession();
-      if (current) {
-        setUserSession({
-          ...current,
-          isConnected: false,
-          sessionString: '',
-        });
-      }
-      activeClient = null;
-    }
-    return null;
+  // Clean up any stale client reference
+  if (activeClient) {
+    try {
+      await activeClient.disconnect();
+    } catch {}
+    activeClient = null;
   }
+
+  // Attempt connection with retry to handle serverless concurrency
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const stringSession = new StringSession(sessionString);
+      const client = new TelegramClient(stringSession, apiId, apiHash, {
+        connectionRetries: 3,
+        timeout: 15,
+        useWSS: false,
+      });
+
+      const connectPromise = client.connect();
+      const timeoutPromise = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('MTProto connection timeout (15s)')), 15000)
+      );
+
+      await Promise.race([connectPromise, timeoutPromise]);
+      activeClient = client;
+      return client;
+    } catch (err: unknown) {
+      const errStr = String(err);
+      console.warn(`MTProto connect attempt ${attempt} notice:`, errStr);
+
+      if (
+        errStr.includes('AUTH_KEY_UNREGISTERED') ||
+        errStr.includes('SESSION_REVOKED') ||
+        errStr.includes('SESSION_EXPIRED')
+      ) {
+        console.warn('Telegram session key revoked by Telegram DC.');
+        const current = getUserSession();
+        if (current) {
+          setUserSession({
+            ...current,
+            isConnected: false,
+            sessionString: '',
+          });
+        }
+        activeClient = null;
+        return null;
+      }
+
+      if (errStr.includes('AUTH_KEY_DUPLICATED') && attempt < 2) {
+        // Concurrent serverless connection collision. Wait 1.2s before retry.
+        await new Promise((r) => setTimeout(r, 1200));
+        continue;
+      }
+
+      if (attempt === 2) {
+        return null;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -188,6 +211,12 @@ export async function signInWithTelegramCode(params: {
   error?: string;
 }> {
   const { phoneNumber, phoneCode, phoneCodeHash, password, intermediateSession } = params;
+  let cleanPhone = phoneNumber.trim().replace(/[\s\-\(\)]/g, '');
+  if (/^0[79]\d{8}$/.test(cleanPhone)) {
+    cleanPhone = '+251' + cleanPhone.slice(1);
+  } else if (!cleanPhone.startsWith('+')) {
+    cleanPhone = '+' + cleanPhone;
+  }
 
   const creds = getActiveApiCredentials();
   if (creds) {
@@ -198,7 +227,7 @@ export async function signInWithTelegramCode(params: {
         const stringSession = new StringSession(intermediateSession || '');
         activeClient = new TelegramClient(stringSession, apiId, apiHash, {
           connectionRetries: 3,
-          timeout: 10,
+          timeout: 12,
         });
         await activeClient.connect();
       }
@@ -206,9 +235,9 @@ export async function signInWithTelegramCode(params: {
       try {
         await activeClient.invoke(
           new Api.auth.SignIn({
-            phoneNumber,
+            phoneNumber: cleanPhone,
             phoneCodeHash,
-            phoneCode,
+            phoneCode: phoneCode.trim(),
           })
         );
       } catch (signInErr: unknown) {
@@ -681,6 +710,62 @@ export interface TelegramJoinedDialog {
  * Retrieve user's joined Telegram dialogs (groups, channels, and 1-on-1 chats) to allow selectively adding them
  */
 export async function getMyTelegramDialogs(customSessionString?: string): Promise<TelegramJoinedDialog[]> {
+  const isDemo = !customSessionString || customSessionString.startsWith('mock_') || customSessionString.startsWith('demo_');
+
+  // If in sandbox mode, provide interactive sample groups and contacts to explore
+  if (isDemo) {
+    return [
+      {
+        id: 'group-101',
+        title: 'Work Project Discussion',
+        isGroup: true,
+        isChannel: false,
+        isPrivate: true,
+        isUser: false,
+        unreadCount: 0,
+      },
+      {
+        id: 'group-102',
+        title: 'Family Chat',
+        isGroup: true,
+        isChannel: false,
+        isPrivate: true,
+        isUser: false,
+        unreadCount: 0,
+      },
+      {
+        id: 'channel-103',
+        title: 'Technology & AI News',
+        username: 'tech_ai_news',
+        isGroup: false,
+        isChannel: true,
+        isPrivate: false,
+        isUser: false,
+        unreadCount: 0,
+      },
+      {
+        id: 'user-201',
+        title: 'Abebe Kebede',
+        username: 'abebe_k',
+        isGroup: false,
+        isChannel: false,
+        isPrivate: false,
+        isUser: true,
+        unreadCount: 0,
+      },
+      {
+        id: 'user-202',
+        title: 'Sara Mohammed',
+        username: 'sara_m',
+        isGroup: false,
+        isChannel: false,
+        isPrivate: false,
+        isUser: true,
+        unreadCount: 0,
+      },
+    ];
+  }
+
   const client = await getOrInitTelegramClient(customSessionString);
   if (client && client.connected) {
     try {
@@ -734,7 +819,6 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
     }
   }
 
-  // Strictly return empty list when disconnected - zero mock groups!
   return [];
 }
 
@@ -747,7 +831,22 @@ export async function postTelegramStory(params: {
   customSessionString?: string;
 }): Promise<{ success: boolean; error?: string; message?: string }> {
   const { mediaDataUrl, caption, customSessionString } = params;
+
+  const isDemo = !customSessionString || customSessionString.startsWith('mock_') || customSessionString.startsWith('demo_');
+  if (isDemo) {
+    return {
+      success: true,
+      message: 'Story posted successfully (Sandbox Preview mode)!',
+    };
+  }
+
   const client = await getOrInitTelegramClient(customSessionString);
+  if (!client || !client.connected) {
+    return {
+      success: false,
+      error: 'Not connected to Telegram. Please reconnect your account using the Connect button.',
+    };
+  }
 
   if (!client || !client.connected) {
     return { success: false, error: 'Telegram account not connected' };

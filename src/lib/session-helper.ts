@@ -12,19 +12,20 @@ import { getUserSession, setUserSession } from './db';
 export function resolveSession(req?: NextRequest): UserSession | null {
   // 1. Check existing in-memory/disk session
   let session = getUserSession();
-  if (session && session.isConnected && session.sessionString && session.sessionString.length > 20) {
+  if (session && session.isConnected && session.sessionString && session.sessionString.length > 10) {
     return session;
   }
 
   if (req) {
     // 2. Check header from client (localStorage persistence)
     const headerSessionStr = req.headers.get('x-telegram-session');
-    if (headerSessionStr && headerSessionStr.trim().length > 20) {
+    if (headerSessionStr && headerSessionStr.trim().length > 10) {
       const cleanSessionStr = headerSessionStr.trim();
       const userId = req.headers.get('x-telegram-user-id') || session?.userId || 'tg-user';
       const firstName = req.headers.get('x-telegram-first-name') || session?.firstName || 'Telegram User';
       const phone = req.headers.get('x-telegram-phone') || session?.phone || '';
       const username = req.headers.get('x-telegram-username') || session?.username || '';
+      const isDemo = cleanSessionStr.startsWith('mock_') || cleanSessionStr.startsWith('demo_');
 
       const restored: UserSession = {
         userId,
@@ -34,7 +35,7 @@ export function resolveSession(req?: NextRequest): UserSession | null {
         phone,
         sessionString: cleanSessionStr,
         isConnected: true,
-        isDemoMode: false,
+        isDemoMode: isDemo,
         connectedAt: session?.connectedAt || new Date().toISOString(),
         lastSyncedAt: new Date().toISOString(),
       };
@@ -48,7 +49,7 @@ export function resolveSession(req?: NextRequest): UserSession | null {
     if (cookieVal) {
       try {
         const parsed = JSON.parse(Buffer.from(cookieVal, 'base64').toString('utf-8')) as UserSession;
-        if (parsed && parsed.sessionString && parsed.sessionString.length > 20 && parsed.isConnected) {
+        if (parsed && parsed.sessionString && parsed.sessionString.length > 10 && parsed.isConnected) {
           setUserSession(parsed);
           return parsed;
         }
@@ -58,7 +59,7 @@ export function resolveSession(req?: NextRequest): UserSession | null {
     }
   }
 
-  if (session && session.isConnected && session.sessionString && session.sessionString.length > 20) {
+  if (session && session.isConnected && session.sessionString && session.sessionString.length > 10) {
     return session;
   }
 

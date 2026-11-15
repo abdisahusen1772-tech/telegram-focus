@@ -48,8 +48,22 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
 
   const getAuthHeaders = (): Record<string, string> => {
     if (typeof window === 'undefined') return {};
+    const headers: Record<string, string> = {};
     const token = localStorage.getItem('tg_focus_session');
-    return token ? { 'x-telegram-session': token } : {};
+    if (token) {
+      headers['x-telegram-session'] = token;
+    }
+    const savedUser = localStorage.getItem('tg_focus_user');
+    if (savedUser) {
+      try {
+        const u = JSON.parse(savedUser);
+        if (u.userId) headers['x-telegram-user-id'] = u.userId;
+        if (u.firstName) headers['x-telegram-first-name'] = encodeURIComponent(u.firstName);
+        if (u.phone) headers['x-telegram-phone'] = u.phone;
+        if (u.username) headers['x-telegram-username'] = u.username;
+      } catch {}
+    }
+    return headers;
   };
 
   const fetchChannelPosts = async () => {
