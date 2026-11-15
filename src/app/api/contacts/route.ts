@@ -37,7 +37,30 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { username } = body;
+    const { username, id, firstName, lastName } = body;
+
+    // Direct addition of user contact from user's Telegram dialogs
+    if (id && (firstName || username)) {
+      const cleanId = String(id).replace(/^contact-/, '');
+      const newContact = {
+        id: `contact-${cleanId}`,
+        username: username || `user_${cleanId}`,
+        firstName: firstName || username || 'Telegram Contact',
+        lastName: lastName || '',
+        status: 'no_new_message' as const,
+        unreadCount: 0,
+        notificationsEnabled: true,
+        addedAt: new Date().toISOString(),
+        lastMessageAt: new Date().toISOString(),
+      };
+
+      const saved = addApprovedContact(newContact);
+      return NextResponse.json({
+        success: true,
+        contact: saved,
+        message: `Added ${newContact.firstName} to Approved Contacts`,
+      });
+    }
 
     if (!username || typeof username !== 'string') {
       return NextResponse.json(

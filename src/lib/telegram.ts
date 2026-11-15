@@ -605,10 +605,40 @@ export async function syncMessagesFromTelegram(peerId: string, peerUsername: str
       let parsedMedia = undefined;
       if (mediaObj) {
         const isPhoto = mediaObj.className === 'MessageMediaPhoto';
+        const isDoc = mediaObj.className === 'MessageMediaDocument';
+        let mediaType: 'image' | 'document' | 'voice' | 'video' = 'document';
+        let mediaName = 'Document attachment';
+        let mediaSize: string | undefined = undefined;
+
+        if (isPhoto) {
+          mediaType = 'image';
+          mediaName = 'Photo';
+        } else if (isDoc) {
+          const doc = (mediaObj as unknown as { document?: { mimeType?: string; size?: number } })?.document;
+          const mime = doc?.mimeType || '';
+          if (mime.startsWith('image/')) {
+            mediaType = 'image';
+            mediaName = 'Image';
+          } else if (mime.startsWith('audio/') || mime === 'audio/ogg') {
+            mediaType = 'voice';
+            mediaName = 'Voice note';
+          } else if (mime.startsWith('video/')) {
+            mediaType = 'video';
+            mediaName = 'Video';
+          } else {
+            mediaType = 'document';
+            mediaName = 'Document';
+          }
+          if (doc?.size) {
+            mediaSize = `${(doc.size / (1024 * 1024)).toFixed(1)} MB`;
+          }
+        }
+
         parsedMedia = {
-          type: isPhoto ? ('image' as const) : ('document' as const),
-          name: isPhoto ? 'Photo' : 'Document attachment',
-          url: '#',
+          type: mediaType,
+          name: mediaName,
+          size: mediaSize,
+          url: `/api/telegram/media?peerId=${encodeURIComponent(peerId)}&messageId=${msgId}`,
         };
       }
 
@@ -643,11 +673,12 @@ export interface TelegramJoinedDialog {
   isGroup: boolean;
   isChannel: boolean;
   isPrivate: boolean;
+  isUser: boolean;
   unreadCount: number;
 }
 
 /**
- * Retrieve user's joined Telegram dialogs (groups and channels) to allow selectively adding private channels/groups
+ * Retrieve user's joined Telegram dialogs (groups, channels, and 1-on-1 chats) to allow selectively adding them
  */
 export async function getMyTelegramDialogs(customSessionString?: string): Promise<TelegramJoinedDialog[]> {
   const client = await getOrInitTelegramClient(customSessionString);
@@ -659,12 +690,16 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
       for (const d of dialogs) {
         const isChannel = Boolean(d.isChannel);
         const isGroup = Boolean(d.isGroup);
+        const isUser = Boolean(d.isUser);
 
-        if (!isChannel && !isGroup) continue;
+        if (!isChannel && !isGroup && !isUser) continue;
+        if (d.id && d.id.toString() === '777000') continue; // Telegram service notices
 
         const entity = d.entity as unknown as {
           id?: { toString: () => string };
           title?: string;
+          firstName?: string;
+          lastName?: string;
           username?: string;
           megagroup?: boolean;
           broadcast?: boolean;
@@ -673,17 +708,22 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
         const idStr = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
         if (!idStr) continue;
 
-        const title = d.title || entity?.title || 'Group / Channel';
+        let title = d.title || entity?.title || '';
+        if (!title && isUser) {
+          title = `${entity?.firstName || ''} ${entity?.lastName || ''}`.trim() || 'Telegram Contact';
+        }
+
         const username = entity?.username || undefined;
         const isPrivate = !username;
 
         results.push({
           id: idStr,
-          title,
+          title: title || (isUser ? 'Telegram User' : 'Telegram Chat'),
           username,
           isGroup: isGroup || Boolean(entity?.megagroup),
           isChannel: isChannel && !entity?.megagroup,
           isPrivate,
+          isUser,
           unreadCount: d.unreadCount || 0,
         });
       }
@@ -699,7 +739,61 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
 }
 
 /**
- * Synchronize real Telegram unread message status and auto-populate all real Telegram 1-on-1 contacts!
+ * Post a photo story to user's Telegram profile
+ */
+export async function postTelegramStory(params: {
+  mediaDataUrl: string;
+  caption?: string;
+  customSessionString?: string;
+}): Promise<{ success: boolean; error?: string; message?: string }> {
+  const { mediaDataUrl, caption, customSessionString } = params;
+  const client = await getOrInitTelegramClient(customSessionString);
+
+  if (!client || !client.connected) {
+    return { success: false, error: 'Telegram account not connected' };
+  }
+
+  try {
+    const matches = mediaDataUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || !matches[2]) {
+      return { success: false, error: 'Invalid image format. Please select a valid photo.' };
+    }
+
+    const buffer = Buffer.from(matches[2], 'base64');
+    const { CustomFile } = await import('telegram/client/uploads');
+    const uploadedFile = await client.uploadFile({
+      file: new CustomFile(`story_${Date.now()}.jpg`, buffer.length, '', buffer),
+      workers: 1,
+    });
+
+    await client.invoke(
+      new Api.stories.SendStory({
+        peer: 'me',
+        media: new Api.InputMediaUploadedPhoto({
+          file: uploadedFile,
+        }),
+        caption: caption ? caption.trim() : '',
+        privacyRules: [new Api.InputPrivacyValueAllowAll()],
+        period: 86400, // 24 hours
+      })
+    );
+
+    return { success: true, message: 'Story posted to your Telegram profile successfully!' };
+  } catch (err: unknown) {
+    console.error('Failed to post Telegram story:', err);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('PREMIUM_ACCOUNT_REQUIRED')) {
+      return {
+        success: false,
+        error: 'Telegram requires a Telegram Premium subscription to post stories from this account.',
+      };
+    }
+    return { success: false, error: `Failed to post story: ${msg}` };
+  }
+}
+
+/**
+ * Synchronize real Telegram unread message status strictly for approved contacts
  */
 export async function syncContactUnreadStatusFromTelegram(customSessionString?: string): Promise<void> {
   const client = await getOrInitTelegramClient(customSessionString);
@@ -709,7 +803,7 @@ export async function syncContactUnreadStatusFromTelegram(customSessionString?: 
     const dialogs = await client.getDialogs({ limit: 100 });
     const contacts = getApprovedContacts();
 
-    // 1. Sync unread state for all existing approved contacts
+    // STRICT VIP FILTERING: Only sync unread state for contacts the user explicitly approved!
     for (const contact of contacts) {
       const cleanUsername = contact.username.toLowerCase().replace(/^@/, '');
       const cleanId = contact.id.toLowerCase().replace(/^contact-/, '');
@@ -731,54 +825,6 @@ export async function syncContactUnreadStatusFromTelegram(customSessionString?: 
       } else {
         // Contact has no active unread dialog in Telegram
         updateContactStatus(contact.id, 'no_new_message', 0);
-      }
-    }
-
-    // 2. Discover and populate ALL real Telegram 1-on-1 contact conversations into contacts!
-    for (const d of dialogs) {
-      if (d.isUser) {
-        const entity = d.entity as unknown as {
-          id?: { toString: () => string };
-          username?: string;
-          firstName?: string;
-          lastName?: string;
-          phone?: string;
-        };
-        const dId = d.id ? d.id.toString() : (entity?.id ? entity.id.toString() : '');
-        // Exclude Telegram service notifications (ID 777000)
-        if (!dId || dId === '777000') continue;
-
-        const dUser = entity?.username?.toLowerCase() || '';
-
-        const existing = contacts.find((c) => {
-          const cUser = c.username.toLowerCase().replace(/^@/, '');
-          const cId = c.id.toLowerCase().replace(/^contact-/, '');
-          return (dUser && cUser === dUser) || (dId && (cId === dId || c.id === dId));
-        });
-
-        const unread = d.unreadCount || 0;
-        const msgDate = d.date ? new Date(d.date * 1000).toISOString() : new Date().toISOString();
-
-        if (existing) {
-          existing.lastMessageAt = msgDate;
-          if (unread > 0) {
-            updateContactStatus(existing.id, 'new_message', unread);
-          }
-        } else {
-          // Auto-register real Telegram contact so user sees them on the interface!
-          addApprovedContact({
-            id: `contact-${dId}`,
-            username: entity?.username || `user_${dId}`,
-            firstName: d.title || entity?.firstName || 'Telegram Contact',
-            lastName: entity?.lastName || '',
-            phone: entity?.phone || undefined,
-            status: unread > 0 ? 'new_message' : 'no_new_message',
-            unreadCount: unread,
-            notificationsEnabled: true,
-            addedAt: new Date().toISOString(),
-            lastMessageAt: msgDate,
-          });
-        }
       }
     }
   } catch (err) {

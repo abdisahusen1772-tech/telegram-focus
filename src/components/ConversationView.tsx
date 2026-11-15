@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw, Paperclip, Image as ImageIcon, Download } from 'lucide-react';
+import { ArrowLeft, Send, Reply, X, FileText, Play, Pause, CheckCheck, Clock, ShieldCheck, RefreshCw, Paperclip, Camera, Image as ImageIcon, Download, ExternalLink } from 'lucide-react';
 import { ApprovedContact, Message } from '@/lib/types';
 
 interface ConversationViewProps {
@@ -20,12 +20,14 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
     size?: string;
     url: string;
   } | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sending, setSending] = useState(false);
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -132,7 +134,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
   };
 
   return (
-    <div className="flex flex-col h-full bg-stone-50 text-stone-900 select-text">
+    <div className="flex flex-col h-full bg-stone-50 text-stone-900 select-text relative">
       {/* Intentional Conversation Header */}
       <div className="px-4 py-3 bg-white/90 backdrop-blur-xs border-b border-stone-200/90 flex items-center justify-between shrink-0 shadow-2xs">
         <div className="flex items-center space-x-3">
@@ -225,7 +227,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
                         src={msg.media.url}
                         alt={msg.media.name || 'Shared image'}
                         className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition"
-                        onClick={() => window.open(msg.media?.url, '_blank')}
+                        onClick={() => setLightboxImg(msg.media?.url || null)}
                       />
                     </div>
                   )}
@@ -356,7 +358,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
       {/* Message Input Box (Deliberate & Distraction-Free) */}
       <form
         onSubmit={handleSendMessage}
-        className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-2 shrink-0"
+        className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-1.5 shrink-0"
       >
         <input
           type="file"
@@ -365,6 +367,24 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
           accept="image/*,.pdf,.doc,.docx,.txt,.zip"
           className="hidden"
         />
+
+        <input
+          type="file"
+          ref={cameraInputRef}
+          onChange={handleFileSelect}
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+        />
+
+        <button
+          type="button"
+          onClick={() => cameraInputRef.current?.click()}
+          className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+          title="Take photo with camera"
+        >
+          <Camera className="w-4 h-4 stroke-[2]" />
+        </button>
 
         <button
           type="button"
@@ -380,7 +400,7 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           placeholder={`Message ${contact.firstName}...`}
-          className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
+          className="flex-1 px-3 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
         />
 
         <button
@@ -392,6 +412,39 @@ export function ConversationView({ contact, onBack, onMessageSent }: Conversatio
           <Send className="w-4 h-4 stroke-[2]" />
         </button>
       </form>
+
+      {/* Lightbox for viewing full-screen photos */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setLightboxImg(null)}
+        >
+          <div className="absolute top-4 right-4 flex items-center space-x-3 z-10">
+            <a
+              href={lightboxImg}
+              download="telegram-image.jpg"
+              onClick={(e) => e.stopPropagation()}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition"
+              title="Download image"
+            >
+              <Download className="w-5 h-5" />
+            </a>
+            <button
+              onClick={() => setLightboxImg(null)}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+              title="Close image"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <img
+            src={lightboxImg}
+            alt="Full size view"
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }

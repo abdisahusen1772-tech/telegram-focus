@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Bell, BellOff, Radio, ShieldCheck, Clock, Send, Users, Lock, FileText, Download, X, Paperclip, Camera, Image as ImageIcon } from 'lucide-react';
 import { ApprovedChannel, Message } from '@/lib/types';
 
 interface ChannelViewProps {
@@ -16,6 +16,35 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
   const [sending, setSending] = useState(false);
   const [notificationsOn, setNotificationsOn] = useState(channel.notificationsEnabled);
   const [loading, setLoading] = useState(true);
+  const [lightboxImg, setLightboxImg] = useState<string | null>(null);
+  const [selectedMedia, setSelectedMedia] = useState<{
+    type: 'image' | 'document';
+    name: string;
+    size?: string;
+    url: string;
+  } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isImage = file.type.startsWith('image/');
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setSelectedMedia({
+        type: isImage ? 'image' : 'document',
+        name: file.name,
+        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+        url: result,
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const getAuthHeaders = (): Record<string, string> => {
     if (typeof window === 'undefined') return {};
@@ -42,7 +71,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     const text = inputText.trim();
-    if (!text || sending) return;
+    if ((!text && !selectedMedia) || sending) return;
 
     setSending(true);
     try {
@@ -55,11 +84,13 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
         body: JSON.stringify({
           peerId: channel.id,
           text,
+          media: selectedMedia || undefined,
         }),
       });
       const data = await res.json();
       if (data.success) {
         setInputText('');
+        setSelectedMedia(null);
         setPosts((prev) => [...prev, data.message]);
       }
     } catch (err) {
@@ -107,7 +138,7 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
   };
 
   return (
-    <div className="flex flex-col h-full bg-stone-50 text-stone-900 select-text">
+    <div className="flex flex-col h-full bg-stone-50 text-stone-900 select-text relative">
       {/* Channel Header */}
       <div className="px-4 py-3 bg-white/90 backdrop-blur-xs border-b border-stone-200/90 flex items-center justify-between shrink-0 shadow-2xs">
         <div className="flex items-center space-x-3">
@@ -195,37 +226,165 @@ export function ChannelView({ channel, onBack, onNotificationToggled }: ChannelV
                 <time>{formatDate(post.date)}</time>
               </div>
 
-              <div className="text-xs text-stone-800 leading-relaxed whitespace-pre-wrap font-sans">
-                {post.text}
-              </div>
+              {/* Render Media Image */}
+              {post.media?.type === 'image' && (
+                <div className="overflow-hidden rounded-lg border border-stone-200/60 max-w-sm">
+                  <img
+                    src={post.media.url}
+                    alt={post.media.name || 'Channel image'}
+                    className="w-full max-h-72 object-cover rounded-lg cursor-pointer hover:opacity-95 transition"
+                    onClick={() => setLightboxImg(post.media?.url || null)}
+                  />
+                </div>
+              )}
+
+              {/* Render Media Document */}
+              {post.media?.type === 'document' && (
+                <a
+                  href={post.media.url}
+                  download={post.media.name || 'document'}
+                  className="p-2.5 bg-stone-100/90 hover:bg-stone-200/80 rounded-lg border border-stone-200 text-stone-800 flex items-center space-x-2.5 transition"
+                >
+                  <FileText className="w-5 h-5 text-stone-600 shrink-0" />
+                  <div className="overflow-hidden flex-1">
+                    <p className="font-mono text-[11px] truncate font-medium">
+                      {post.media.name || 'Document.pdf'}
+                    </p>
+                    {post.media.size && (
+                      <p className="text-[10px] text-stone-500 font-mono">{post.media.size}</p>
+                    )}
+                  </div>
+                  <Download className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                </a>
+              )}
+
+              {/* Text content */}
+              {post.text && (
+                <div className="text-xs text-stone-800 leading-relaxed whitespace-pre-wrap font-sans">
+                  {post.text}
+                </div>
+              )}
             </article>
           ))
         )}
       </div>
 
+      {/* Attachment Preview Chip for Groups */}
+      {selectedMedia && (
+        <div className="px-4 py-2 bg-stone-100/95 border-t border-stone-200 flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-2 overflow-hidden">
+            {selectedMedia.type === 'image' ? (
+              <ImageIcon className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+            )}
+            <div className="truncate">
+              <span className="font-semibold text-stone-800">{selectedMedia.name} </span>
+              <span className="text-stone-500 font-mono text-[10px]">({selectedMedia.size})</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedMedia(null)}
+            className="text-stone-400 hover:text-stone-700 p-1 cursor-pointer"
+            title="Remove attachment"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Group Message Composer if this is a group chat */}
       {channel.isGroup && (
         <form
           onSubmit={handleSendMessage}
-          className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-2 shrink-0"
+          className="p-3 bg-white border-t border-stone-200/90 flex items-center space-x-1.5 shrink-0"
         >
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            accept="image/*,.pdf,.doc,.docx,.txt,.zip"
+            className="hidden"
+          />
+
+          <input
+            type="file"
+            ref={cameraInputRef}
+            onChange={handleFileSelect}
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+          />
+
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+            title="Take photo with camera"
+          >
+            <Camera className="w-4 h-4 stroke-[2]" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 text-stone-500 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition cursor-pointer"
+            title="Attach file or photo"
+          >
+            <Paperclip className="w-4 h-4 stroke-[2]" />
+          </button>
+
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder={`Message ${channel.title.replace(/[^\w\s]/gi, '').trim()}...`}
-            className="flex-1 px-3.5 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
+            className="flex-1 px-3 py-2.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:border-stone-900 focus:bg-white transition placeholder:text-stone-400 font-normal"
           />
 
           <button
             type="submit"
-            disabled={!inputText.trim() || sending}
+            disabled={(!inputText.trim() && !selectedMedia) || sending}
             className="p-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 rounded-lg transition-all duration-150 flex items-center justify-center cursor-pointer shadow-xs"
             title="Send to group"
           >
             <Send className="w-4 h-4 stroke-[2]" />
           </button>
         </form>
+      )}
+
+      {/* Lightbox for viewing full-screen photos in channel */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setLightboxImg(null)}
+        >
+          <div className="absolute top-4 right-4 flex items-center space-x-3 z-10">
+            <a
+              href={lightboxImg}
+              download="channel-image.jpg"
+              onClick={(e) => e.stopPropagation()}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition"
+              title="Download image"
+            >
+              <Download className="w-5 h-5" />
+            </a>
+            <button
+              onClick={() => setLightboxImg(null)}
+              className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+              title="Close image"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <img
+            src={lightboxImg}
+            alt="Full size view"
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </div>
   );

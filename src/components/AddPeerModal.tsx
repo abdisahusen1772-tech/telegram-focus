@@ -18,6 +18,7 @@ interface JoinedDialogItem {
   isGroup: boolean;
   isChannel: boolean;
   isPrivate: boolean;
+  isUser?: boolean;
   isAlreadyAdded?: boolean;
 }
 
@@ -34,17 +35,17 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const isContact = type === 'contact';
-  const title = isContact ? 'Approve Contact' : 'Approve Channel or Private Group';
+  const title = isContact ? 'Approve Contact' : 'Approve Channel or Group';
   const placeholder = isContact ? '@username' : '@examplechannel';
   const helperText = isContact
-    ? 'Enter the exact Telegram username of the contact you wish to allow. No contact discovery or general search is permitted.'
+    ? 'Enter the exact Telegram username of the contact you wish to allow, or switch to "From My Telegram" to pick directly from your active chats.'
     : 'Add public channels by @username or select your joined private channels and groups directly from your connected Telegram account.';
 
   useEffect(() => {
-    if (isOpen && !isContact && activeTab === 'dialogs' && dialogs.length === 0) {
+    if (isOpen && activeTab === 'dialogs' && dialogs.length === 0) {
       loadDialogs();
     }
-  }, [isOpen, activeTab, isContact]);
+  }, [isOpen, activeTab]);
 
   const getAuthHeaders = (): Record<string, string> => {
     if (typeof window === 'undefined') return {};
@@ -119,24 +120,33 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
     setAddingDialogId(d.id);
     setError(null);
     try {
-      const res = await fetch('/api/channels', {
+      const endpoint = isContact ? '/api/contacts' : '/api/channels';
+      const body = isContact
+        ? {
+            id: d.id,
+            firstName: d.title,
+            username: d.username,
+          }
+        : {
+            id: d.id,
+            title: d.title,
+            username: d.username,
+            isGroup: d.isGroup,
+            isPrivate: d.isPrivate,
+          };
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({
-          id: d.id,
-          title: d.title,
-          username: d.username,
-          isGroup: d.isGroup,
-          isPrivate: d.isPrivate,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to add private group/channel');
+        throw new Error(data.error || `Failed to add ${isContact ? 'contact' : 'group/channel'}`);
       }
 
       setDialogs((prev) =>
@@ -149,7 +159,7 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
         setSuccessMsg(null);
       }, 700);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to add group');
+      setError(err instanceof Error ? err.message : 'Failed to add item');
     } finally {
       setAddingDialogId(null);
     }
@@ -171,35 +181,37 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
           </button>
         </div>
 
-        {/* Tab Switcher for Channels & Groups */}
-        {!isContact && (
-          <div className="flex border-b border-stone-200 mt-2 shrink-0">
-            <button
-              onClick={() => setActiveTab('username')}
-              className={`flex-1 py-2 text-xs font-medium border-b-2 transition ${
-                activeTab === 'username'
-                  ? 'border-stone-900 text-stone-900'
-                  : 'border-transparent text-stone-400 hover:text-stone-700'
-              }`}
-            >
-              By @Username
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('dialogs');
-                if (dialogs.length === 0) loadDialogs();
-              }}
-              className={`flex-1 py-2 text-xs font-medium border-b-2 transition flex items-center justify-center space-x-1 ${
-                activeTab === 'dialogs'
-                  ? 'border-stone-900 text-stone-900'
-                  : 'border-transparent text-stone-400 hover:text-stone-700'
-              }`}
-            >
-              <span>My Telegram Groups</span>
+        {/* Tab Switcher for both Contacts & Channels */}
+        <div className="flex border-b border-stone-200 mt-2 shrink-0">
+          <button
+            onClick={() => setActiveTab('username')}
+            className={`flex-1 py-2 text-xs font-medium border-b-2 transition ${
+              activeTab === 'username'
+                ? 'border-stone-900 text-stone-900'
+                : 'border-transparent text-stone-400 hover:text-stone-700'
+            }`}
+          >
+            By @Username
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('dialogs');
+              if (dialogs.length === 0) loadDialogs();
+            }}
+            className={`flex-1 py-2 text-xs font-medium border-b-2 transition flex items-center justify-center space-x-1 ${
+              activeTab === 'dialogs'
+                ? 'border-stone-900 text-stone-900'
+                : 'border-transparent text-stone-400 hover:text-stone-700'
+            }`}
+          >
+            <span>{isContact ? 'From My Telegram' : 'My Telegram Groups'}</span>
+            {isContact ? (
+              <Users className="w-3 h-3 ml-0.5 opacity-60" />
+            ) : (
               <Lock className="w-3 h-3 ml-0.5 opacity-60" />
-            </button>
-          </div>
-        )}
+            )}
+          </button>
+        </div>
 
         {/* Tab 1: Username Form */}
         {activeTab === 'username' && (
@@ -257,17 +269,17 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
           </form>
         )}
 
-        {/* Tab 2: Joined Private Channels & Groups */}
-        {!isContact && activeTab === 'dialogs' && (
+        {/* Tab 2: Joined Dialogs (Contacts or Channels/Groups) */}
+        {activeTab === 'dialogs' && (
           <div className="pt-3 space-y-3 flex-1 overflow-y-auto">
-            {/* Search Input for Joined Channels & Groups */}
+            {/* Search Input for Joined Dialogs */}
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-stone-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search your channels & groups by name..."
+                placeholder={isContact ? "Search contacts by name or @username..." : "Search your channels & groups by name..."}
                 className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-stone-800 transition placeholder:text-stone-400 font-sans"
               />
             </div>
@@ -278,7 +290,7 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
                   Telegram Account Not Connected
                 </p>
                 <p className="text-[11px] text-amber-700 leading-relaxed font-sans">
-                  Please connect your Telegram account first to load and search your actual joined groups and channels.
+                  Please connect your Telegram account first to load and select from your actual chats.
                 </p>
                 {onOpenConnectModal && (
                   <button
@@ -296,29 +308,31 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
             ) : loadingDialogs ? (
               <div className="py-8 flex flex-col items-center justify-center text-xs text-stone-400 font-mono space-y-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Loading your joined groups...</span>
-              </div>
-            ) : dialogs.length === 0 ? (
-              <div className="py-6 text-center text-xs text-stone-500 font-sans space-y-2">
-                <p>No joined channels or groups found in your Telegram account.</p>
-                <button
-                  type="button"
-                  onClick={loadDialogs}
-                  className="text-[11px] font-mono text-stone-700 underline hover:text-black cursor-pointer"
-                >
-                  ↻ Refresh Telegram Groups
-                </button>
+                <span>Loading your Telegram chats...</span>
               </div>
             ) : (() => {
               const q = searchQuery.toLowerCase().trim();
-              const filtered = dialogs.filter((d) =>
-                !q ? true : d.title.toLowerCase().includes(q) || (d.username && d.username.toLowerCase().includes(q))
-              );
+              const filtered = dialogs
+                .filter((d) => (isContact ? d.isUser : (d.isGroup || d.isChannel)))
+                .filter((d) =>
+                  !q ? true : d.title.toLowerCase().includes(q) || (d.username && d.username.toLowerCase().includes(q))
+                );
 
               if (filtered.length === 0) {
                 return (
-                  <div className="py-6 text-center text-xs text-stone-400 font-mono">
-                    No channels or groups found matching &ldquo;{searchQuery}&rdquo;.
+                  <div className="py-6 text-center text-xs text-stone-400 font-mono space-y-2">
+                    <p>
+                      {searchQuery
+                        ? `No ${isContact ? 'contacts' : 'channels/groups'} found matching "${searchQuery}".`
+                        : `No ${isContact ? 'individual contacts' : 'channels or groups'} found in your account.`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={loadDialogs}
+                      className="text-[11px] font-mono text-stone-700 underline hover:text-black cursor-pointer"
+                    >
+                      ↻ Refresh Telegram Chats
+                    </button>
                   </div>
                 );
               }
@@ -335,14 +349,14 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
                           <span className="text-xs font-medium text-stone-900 truncate">
                             {d.title}
                           </span>
-                          {d.isPrivate && (
+                          {d.isPrivate && !isContact && (
                             <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 border border-stone-200">
                               Private
                             </span>
                           )}
                         </div>
                         <div className="flex items-center space-x-2 text-[10px] text-stone-400 font-mono mt-0.5">
-                          <span>{d.isGroup ? 'Group' : 'Channel'}</span>
+                          <span>{isContact ? 'Contact' : d.isGroup ? 'Group' : 'Channel'}</span>
                           {d.username && <span>@{d.username}</span>}
                         </div>
                       </div>
@@ -379,10 +393,21 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
             )}
 
             {successMsg && (
-              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-800 text-xs">
-                {successMsg}
+              <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-emerald-800 text-xs flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{successMsg}</span>
               </div>
             )}
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2 text-xs font-medium text-stone-600 bg-stone-200 hover:bg-stone-300 rounded transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         )}
       </div>

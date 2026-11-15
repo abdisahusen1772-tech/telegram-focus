@@ -16,6 +16,7 @@ interface HomeScreenProps {
   focusMode: boolean;
   onOpenFocusModal: () => void;
   onOpenThemeModal?: () => void;
+  onOpenStoryModal?: () => void;
   themeName?: string;
 }
 
@@ -30,6 +31,7 @@ export function HomeScreen({
   focusMode,
   onOpenFocusModal,
   onOpenThemeModal,
+  onOpenStoryModal,
   themeName,
 }: HomeScreenProps) {
   // Sort channels: Pinned first, then alphabetically
@@ -82,6 +84,17 @@ export function HomeScreen({
               >
                 <span>🎨</span>
                 <span>{themeName || 'Theme'}</span>
+              </button>
+            )}
+
+            {onOpenStoryModal && (
+              <button
+                onClick={onOpenStoryModal}
+                className="text-[10px] font-mono px-2.5 py-1 rounded-full border border-stone-300 hover:border-stone-500 bg-white hover:bg-stone-50 transition cursor-pointer text-stone-700 shadow-2xs flex items-center space-x-1"
+                title="Post to Telegram Story"
+              >
+                <span>📸</span>
+                <span>Story</span>
               </button>
             )}
           </div>

@@ -10,6 +10,7 @@ import { ConnectTelegramModal } from '@/components/ConnectTelegramModal';
 import { FocusModeBanner } from '@/components/FocusModeBanner';
 import { OfflineBanner } from '@/components/OfflineBanner';
 import { ThemeSelectorModal, AppTheme, THEME_OPTIONS } from '@/components/ThemeSelectorModal';
+import { StoryModal } from '@/components/StoryModal';
 import {
   UserSession,
   ApprovedContact,
@@ -52,6 +53,7 @@ export default function TelegramFocusApp() {
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isFocusModalOpen, setIsFocusModalOpen] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [isStoryModalOpen, setIsStoryModalOpen] = useState(false);
 
   // Distraction-free In-App Notification Toast
   const [activeToast, setActiveToast] = useState<{
@@ -639,6 +641,7 @@ export default function TelegramFocusApp() {
               focusMode={settings.focusMode}
               onOpenFocusModal={() => setIsFocusModalOpen(true)}
               onOpenThemeModal={() => setIsThemeModalOpen(true)}
+              onOpenStoryModal={() => setIsStoryModalOpen(true)}
               themeName={currentThemeObj.name}
             />
           )}
@@ -728,6 +731,13 @@ export default function TelegramFocusApp() {
         currentTheme={theme}
         onSelectTheme={handleSelectTheme}
         onClose={() => setIsThemeModalOpen(false)}
+      />
+
+      {/* Story Posting Modal */}
+      <StoryModal
+        isOpen={isStoryModalOpen}
+        onClose={() => setIsStoryModalOpen(false)}
+        onSuccess={loadData}
       />
     </main>
   );

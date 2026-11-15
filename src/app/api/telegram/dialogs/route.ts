@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMyTelegramDialogs } from '@/lib/telegram';
-import { getApprovedChannels } from '@/lib/db';
+import { getApprovedChannels, getApprovedContacts } from '@/lib/db';
 import { resolveSession } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
@@ -21,16 +21,28 @@ export async function GET(req: NextRequest) {
 
     const dialogs = await getMyTelegramDialogs(session.sessionString);
     const approvedChannels = getApprovedChannels();
-    const approvedIds = new Set(
+    const approvedContacts = getApprovedContacts();
+    const approvedChannelIds = new Set(
       approvedChannels.map((c) =>
         c.id.replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '')
       )
     );
+    const approvedContactIds = new Set(
+      approvedContacts.map((c) =>
+        c.id.replace(/^contact-/, '').replace(/^-/, '')
+      )
+    );
 
-    const enriched = dialogs.map((d) => ({
-      ...d,
-      isAlreadyAdded: approvedIds.has(d.id.replace(/^-100/, '').replace(/^-/, '')),
-    }));
+    const enriched = dialogs.map((d) => {
+      const rawId = d.id.replace(/^-100/, '').replace(/^-/, '');
+      const isAlreadyAdded = d.isUser
+        ? approvedContactIds.has(rawId)
+        : approvedChannelIds.has(rawId);
+      return {
+        ...d,
+        isAlreadyAdded,
+      };
+    });
 
     return NextResponse.json({
       success: true,
