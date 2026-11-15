@@ -28,7 +28,14 @@ type TabView = 'home' | 'channels' | 'contacts' | 'settings';
 
 export default function TelegramFocusApp() {
   const [activeTab, setActiveTab] = useState<TabView>('home');
-  const [theme, setTheme] = useState<AppTheme>('paper');
+  const [theme, setTheme] = useState<AppTheme>(() => {
+    if (typeof window === 'undefined') return 'nordic';
+    const saved = localStorage.getItem('focus_theme') as AppTheme;
+    if (saved && THEME_OPTIONS.some((t) => t.id === saved)) {
+      return saved;
+    }
+    return 'nordic';
+  });
   const [session, setSession] = useState<UserSession | null>(() => {
     if (typeof window === 'undefined') return null;
     const token = localStorage.getItem('tg_focus_session');
@@ -159,17 +166,16 @@ export default function TelegramFocusApp() {
         setIsApiConfigured(authData.isApiConfigured);
         if (authData.settings) {
           setSettings(authData.settings);
-          if (authData.settings.theme) {
-            setTheme(authData.settings.theme);
-          }
         }
       }
 
-      // Check localStorage for saved theme preference
+      // Check localStorage for saved theme preference (client preference takes priority)
       if (typeof window !== 'undefined') {
         const savedTheme = localStorage.getItem('focus_theme') as AppTheme;
         if (savedTheme && THEME_OPTIONS.some((t) => t.id === savedTheme)) {
           setTheme(savedTheme);
+        } else if (authData.settings?.theme) {
+          setTheme(authData.settings.theme);
         }
       }
 
@@ -332,6 +338,9 @@ export default function TelegramFocusApp() {
 
   const handleSelectTheme = (newTheme: AppTheme) => {
     setTheme(newTheme);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('focus_theme', newTheme);
+    }
     handleUpdateSettings({ theme: newTheme });
   };
 

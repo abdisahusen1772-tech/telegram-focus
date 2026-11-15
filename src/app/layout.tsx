@@ -32,7 +32,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('focus_theme')||'nordic';document.body?document.body.classList.add('theme-'+t):document.addEventListener('DOMContentLoaded',function(){document.body.classList.add('theme-'+t)})}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className="min-h-full bg-stone-100 flex flex-col">{children}</body>
     </html>
   );
