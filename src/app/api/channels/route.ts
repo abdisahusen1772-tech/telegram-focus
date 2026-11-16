@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApprovedChannels, addApprovedChannel, removeApprovedChannel, updateChannelNotifications, togglePinChannel } from '@/lib/db';
+import { getApprovedChannels, addApprovedChannel, removeApprovedChannel, updateChannelNotifications, togglePinChannel, getDb, saveDb } from '@/lib/db';
 import { verifyTelegramUsername } from '@/lib/telegram';
 import { ApprovedChannel } from '@/lib/types';
-import { resolveSession } from '@/lib/session-helper';
+import { resolveSession, syncPeersFromHeaders } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    resolveSession(req);
+    syncPeersFromHeaders(req);
     const channels = getApprovedChannels();
     return NextResponse.json({
       success: true,
@@ -20,6 +22,41 @@ export async function GET() {
       { success: false, error: 'Failed to retrieve approved channels' },
       { status: 500 }
     );
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { channels } = body;
+    if (Array.isArray(channels)) {
+      const db = getDb();
+      let changed = false;
+      for (const ch of channels) {
+        if (!ch || !ch.id) continue;
+        const exists = db.channels.some(
+          existing => existing.id === ch.id || (existing.username && ch.username && existing.username.toLowerCase() === ch.username.toLowerCase())
+        );
+        if (!exists) {
+          db.channels.push(ch);
+          if (!db.settings.channelNotifications[ch.id]) {
+            db.settings.channelNotifications[ch.id] = ch.notificationsEnabled ?? true;
+          }
+          changed = true;
+        }
+      }
+      if (changed) {
+        saveDb(db);
+      }
+      return NextResponse.json({
+        success: true,
+        channels: db.channels,
+      });
+    }
+    return NextResponse.json({ success: false, error: 'channels array required' }, { status: 400 });
+  } catch (error) {
+    console.error('Error syncing channels:', error);
+    return NextResponse.json({ success: false, error: 'Failed to sync channels' }, { status: 500 });
   }
 }
 

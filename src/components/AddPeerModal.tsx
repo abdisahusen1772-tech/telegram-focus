@@ -64,6 +64,24 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
         if (u.username) headers['x-telegram-username'] = u.username;
       } catch {}
     }
+    const savedChannels = localStorage.getItem('tg_focus_channels');
+    if (savedChannels) {
+      try {
+        const parsed = JSON.parse(savedChannels);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          headers['x-telegram-channels'] = encodeURIComponent(savedChannels);
+        }
+      } catch {}
+    }
+    const savedContacts = localStorage.getItem('tg_focus_contacts');
+    if (savedContacts) {
+      try {
+        const parsed = JSON.parse(savedContacts);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          headers['x-telegram-contacts'] = encodeURIComponent(savedContacts);
+        }
+      } catch {}
+    }
     return headers;
   };
 

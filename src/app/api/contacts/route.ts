@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getApprovedContacts, addApprovedContact, removeApprovedContact, togglePinContact } from '@/lib/db';
+import { getApprovedContacts, addApprovedContact, removeApprovedContact, togglePinContact, getDb, saveDb } from '@/lib/db';
 import { verifyTelegramUsername, syncContactUnreadStatusFromTelegram } from '@/lib/telegram';
-import { resolveSession } from '@/lib/session-helper';
+import { resolveSession, syncPeersFromHeaders } from '@/lib/session-helper';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +10,7 @@ export const maxDuration = 30;
 export async function GET(req: NextRequest) {
   try {
     const session = resolveSession(req);
+    syncPeersFromHeaders(req);
     if (session && !session.isDemoMode && session.isConnected && session.sessionString) {
       try {
         const syncPromise = syncContactUnreadStatusFromTelegram(session.sessionString);
@@ -31,6 +32,41 @@ export async function GET(req: NextRequest) {
       { success: false, error: 'Failed to retrieve approved contacts' },
       { status: 500 }
     );
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { contacts } = body;
+    if (Array.isArray(contacts)) {
+      const db = getDb();
+      let changed = false;
+      for (const c of contacts) {
+        if (!c || !c.id) continue;
+        const exists = db.contacts.some(
+          existing => existing.id === c.id || (existing.username && c.username && existing.username.toLowerCase() === c.username.toLowerCase())
+        );
+        if (!exists) {
+          db.contacts.push(c);
+          if (!db.settings.contactNotifications[c.id]) {
+            db.settings.contactNotifications[c.id] = c.notificationsEnabled ?? true;
+          }
+          changed = true;
+        }
+      }
+      if (changed) {
+        saveDb(db);
+      }
+      return NextResponse.json({
+        success: true,
+        contacts: db.contacts,
+      });
+    }
+    return NextResponse.json({ success: false, error: 'contacts array required' }, { status: 400 });
+  } catch (error) {
+    console.error('Error syncing contacts:', error);
+    return NextResponse.json({ success: false, error: 'Failed to sync contacts' }, { status: 500 });
   }
 }
 

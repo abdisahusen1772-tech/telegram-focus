@@ -61,8 +61,28 @@ export default function TelegramFocusApp() {
     return null;
   });
   const [isApiConfigured, setIsApiConfigured] = useState<boolean>(false);
-  const [contacts, setContacts] = useState<ApprovedContact[]>([]);
-  const [channels, setChannels] = useState<ApprovedChannel[]>([]);
+  const [contacts, setContacts] = useState<ApprovedContact[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('tg_focus_contacts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const [channels, setChannels] = useState<ApprovedChannel[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const saved = localStorage.getItem('tg_focus_channels');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [settings, setSettings] = useState<AppSettings>({
     focusMode: true,
     messagePreviewAlwaysOff: true,
@@ -118,6 +138,47 @@ export default function TelegramFocusApp() {
         if (u.firstName) headers['x-telegram-first-name'] = encodeURIComponent(u.firstName);
         if (u.phone) headers['x-telegram-phone'] = u.phone;
         if (u.username) headers['x-telegram-username'] = u.username;
+      } catch {}
+    }
+
+    const savedChannels = localStorage.getItem('tg_focus_channels');
+    if (savedChannels) {
+      try {
+        const parsed = JSON.parse(savedChannels);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const compact = parsed.map((c: ApprovedChannel) => ({
+            id: c.id,
+            username: c.username,
+            title: c.title,
+            isGroup: Boolean(c.isGroup),
+            isPrivate: Boolean(c.isPrivate),
+            notificationsEnabled: Boolean(c.notificationsEnabled),
+            isPinned: Boolean(c.isPinned),
+            addedAt: c.addedAt,
+          }));
+          headers['x-telegram-channels'] = encodeURIComponent(JSON.stringify(compact));
+        }
+      } catch {}
+    }
+
+    const savedContacts = localStorage.getItem('tg_focus_contacts');
+    if (savedContacts) {
+      try {
+        const parsed = JSON.parse(savedContacts);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const compact = parsed.map((c: ApprovedContact) => ({
+            id: c.id,
+            username: c.username,
+            firstName: c.firstName,
+            lastName: c.lastName,
+            status: c.status,
+            unreadCount: c.unreadCount,
+            isPinned: Boolean(c.isPinned),
+            notificationsEnabled: Boolean(c.notificationsEnabled),
+            addedAt: c.addedAt,
+          }));
+          headers['x-telegram-contacts'] = encodeURIComponent(JSON.stringify(compact));
+        }
       } catch {}
     }
     return headers;
@@ -217,14 +278,61 @@ export default function TelegramFocusApp() {
         prevUnreadContactsRef.current = unreadSet;
         initialLoadDoneRef.current = true;
 
-        setContacts(newContacts);
+        setContacts((prevLocal) => {
+          // If server returned empty, but we have local contacts, don't wipe! Re-sync to server.
+          if (newContacts.length === 0 && prevLocal.length > 0) {
+            fetch('/api/contacts', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', ...authHeaders },
+              body: JSON.stringify({ contacts: prevLocal }),
+            }).catch(() => {});
+            return prevLocal;
+          }
+
+          // Merge server and local (server takes precedence for dynamic status/unreadCount)
+          const map = new Map<string, ApprovedContact>();
+          prevLocal.forEach((c) => map.set(c.id, c));
+          newContacts.forEach((c) => {
+            const existing = map.get(c.id);
+            map.set(c.id, { ...existing, ...c });
+          });
+          const merged = Array.from(map.values());
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('tg_focus_contacts', JSON.stringify(merged));
+          }
+          return merged;
+        });
       }
 
       // 3. Channels
       const channelsRes = await fetch('/api/channels', { headers: authHeaders });
       const channelsData = await channelsRes.json();
       if (channelsData.success && Array.isArray(channelsData.channels)) {
-        setChannels(channelsData.channels);
+        const serverChannels: ApprovedChannel[] = channelsData.channels;
+        setChannels((prevLocal) => {
+          // If server returned empty, but we have local channels, don't wipe! Re-sync to server.
+          if (serverChannels.length === 0 && prevLocal.length > 0) {
+            fetch('/api/channels', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', ...authHeaders },
+              body: JSON.stringify({ channels: prevLocal }),
+            }).catch(() => {});
+            return prevLocal;
+          }
+
+          // Merge server and local
+          const map = new Map<string, ApprovedChannel>();
+          prevLocal.forEach((ch) => map.set(ch.id, ch));
+          serverChannels.forEach((ch) => {
+            const existing = map.get(ch.id);
+            map.set(ch.id, { ...existing, ...ch });
+          });
+          const merged = Array.from(map.values());
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('tg_focus_channels', JSON.stringify(merged));
+          }
+          return merged;
+        });
       }
 
       const now = new Date();
@@ -356,9 +464,13 @@ export default function TelegramFocusApp() {
       });
       const data = await res.json();
       if (data.success) {
-        setContacts((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, isPinned: !c.isPinned } : c))
-        );
+        setContacts((prev) => {
+          const updated = prev.map((c) => (c.id === id ? { ...c, isPinned: !c.isPinned } : c));
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('tg_focus_contacts', JSON.stringify(updated));
+          }
+          return updated;
+        });
       }
     } catch (e) {
       console.error('Failed to toggle pin contact:', e);
@@ -377,9 +489,13 @@ export default function TelegramFocusApp() {
       });
       const data = await res.json();
       if (data.success) {
-        setChannels((prev) =>
-          prev.map((ch) => (ch.id === id ? { ...ch, isPinned: !ch.isPinned } : ch))
-        );
+        setChannels((prev) => {
+          const updated = prev.map((ch) => (ch.id === id ? { ...ch, isPinned: !ch.isPinned } : ch));
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('tg_focus_channels', JSON.stringify(updated));
+          }
+          return updated;
+        });
       }
     } catch (e) {
       console.error('Failed to toggle pin channel:', e);
@@ -392,7 +508,13 @@ export default function TelegramFocusApp() {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
-      setContacts((prev) => prev.filter((c) => c.id !== id));
+      setContacts((prev) => {
+        const updated = prev.filter((c) => c.id !== id);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('tg_focus_contacts', JSON.stringify(updated));
+        }
+        return updated;
+      });
       if (activeContact?.id === id) setActiveContact(null);
     } catch (e) {
       console.error('Failed to remove contact:', e);
@@ -405,7 +527,13 @@ export default function TelegramFocusApp() {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
-      setChannels((prev) => prev.filter((ch) => ch.id !== id));
+      setChannels((prev) => {
+        const updated = prev.filter((ch) => ch.id !== id);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('tg_focus_channels', JSON.stringify(updated));
+        }
+        return updated;
+      });
       if (activeChannel?.id === id) setActiveChannel(null);
     } catch (e) {
       console.error('Failed to remove channel:', e);
@@ -649,13 +777,17 @@ export default function TelegramFocusApp() {
               allContacts={contacts}
               allChannels={channels}
               onNotificationToggled={(enabled) => {
-                setChannels((prev) =>
-                  prev.map((c) =>
+                setChannels((prev) => {
+                  const updated = prev.map((c) =>
                     c.id === activeChannel.id
                       ? { ...c, notificationsEnabled: enabled }
                       : c
-                  )
-                );
+                  );
+                  if (typeof window !== 'undefined') {
+                    localStorage.setItem('tg_focus_channels', JSON.stringify(updated));
+                  }
+                  return updated;
+                });
               }}
             />
           ) : activeTab === 'settings' ? (
@@ -782,7 +914,30 @@ export default function TelegramFocusApp() {
           isOpen={Boolean(addModalType)}
           type={addModalType}
           onClose={() => setAddModalType(null)}
-          onSuccess={loadData}
+          onSuccess={(data: unknown) => {
+            const peerData = data as { channel?: ApprovedChannel; contact?: ApprovedContact } | undefined;
+            if (peerData?.channel) {
+              setChannels((prev) => {
+                const exists = prev.some((c) => c.id === peerData.channel!.id || c.username.toLowerCase() === peerData.channel!.username.toLowerCase());
+                const updated = exists ? prev : [peerData.channel!, ...prev];
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('tg_focus_channels', JSON.stringify(updated));
+                }
+                return updated;
+              });
+            }
+            if (peerData?.contact) {
+              setContacts((prev) => {
+                const exists = prev.some((c) => c.id === peerData.contact!.id || c.username.toLowerCase() === peerData.contact!.username.toLowerCase());
+                const updated = exists ? prev : [peerData.contact!, ...prev];
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem('tg_focus_contacts', JSON.stringify(updated));
+                }
+                return updated;
+              });
+            }
+            loadData();
+          }}
           onOpenConnectModal={() => setIsConnectModalOpen(true)}
         />
       )}

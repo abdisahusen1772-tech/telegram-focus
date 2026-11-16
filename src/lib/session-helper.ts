@@ -1,6 +1,72 @@
 import { NextRequest } from 'next/server';
-import { UserSession } from './types';
-import { getUserSession, setUserSession } from './db';
+import { UserSession, ApprovedChannel, ApprovedContact } from './types';
+import { getUserSession, setUserSession, getDb, saveDb } from './db';
+
+/**
+ * Restore client's approved channels and contacts into serverless memory/disk
+ * if the lambda is fresh or missing them.
+ */
+export function syncPeersFromHeaders(req?: NextRequest): void {
+  if (!req) return;
+
+  try {
+    const channelsHeader = req.headers.get('x-telegram-channels');
+    if (channelsHeader) {
+      const parsedChannels = JSON.parse(decodeURIComponent(channelsHeader)) as ApprovedChannel[];
+      if (Array.isArray(parsedChannels) && parsedChannels.length > 0) {
+        const db = getDb();
+        let changed = false;
+        for (const ch of parsedChannels) {
+          if (!ch || !ch.id) continue;
+          const exists = db.channels.some(
+            existing => existing.id === ch.id || (existing.username && ch.username && existing.username.toLowerCase() === ch.username.toLowerCase())
+          );
+          if (!exists) {
+            db.channels.push(ch);
+            if (!db.settings.channelNotifications[ch.id]) {
+              db.settings.channelNotifications[ch.id] = ch.notificationsEnabled ?? true;
+            }
+            changed = true;
+          }
+        }
+        if (changed) {
+          saveDb(db);
+        }
+      }
+    }
+  } catch (err) {
+    // ignore header parse errors
+  }
+
+  try {
+    const contactsHeader = req.headers.get('x-telegram-contacts');
+    if (contactsHeader) {
+      const parsedContacts = JSON.parse(decodeURIComponent(contactsHeader)) as ApprovedContact[];
+      if (Array.isArray(parsedContacts) && parsedContacts.length > 0) {
+        const db = getDb();
+        let changed = false;
+        for (const c of parsedContacts) {
+          if (!c || !c.id) continue;
+          const exists = db.contacts.some(
+            existing => existing.id === c.id || (existing.username && c.username && existing.username.toLowerCase() === c.username.toLowerCase())
+          );
+          if (!exists) {
+            db.contacts.push(c);
+            if (!db.settings.contactNotifications[c.id]) {
+              db.settings.contactNotifications[c.id] = c.notificationsEnabled ?? true;
+            }
+            changed = true;
+          }
+        }
+        if (changed) {
+          saveDb(db);
+        }
+      }
+    }
+  } catch (err) {
+    // ignore header parse errors
+  }
+}
 
 /**
  * Universally resolve and restore a Telegram session across serverless environments.
@@ -10,6 +76,11 @@ import { getUserSession, setUserSession } from './db';
  * 3. In-memory / disk session from getDb()
  */
 export function resolveSession(req?: NextRequest): UserSession | null {
+  // Always sync peer lists if headers are provided
+  if (req) {
+    syncPeersFromHeaders(req);
+  }
+
   // 1. Check existing in-memory/disk session
   let session = getUserSession();
   if (session && session.isConnected && session.sessionString && session.sessionString.length > 10) {
