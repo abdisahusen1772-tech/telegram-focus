@@ -182,12 +182,28 @@ export function addApprovedContact(contact: ApprovedContact): ApprovedContact {
   return contact;
 }
 
-export function removeApprovedContact(id: string): boolean {
+export function removeApprovedContact(idOrUsername: string): boolean {
   const db = getDb();
   const initialLen = db.contacts.length;
-  db.contacts = db.contacts.filter(c => c.id !== id && c.username !== id);
-  db.messages = db.messages.filter(m => m.peerId !== id);
-  delete db.settings.contactNotifications[id];
+  const clean = idOrUsername.toLowerCase().trim().replace(/^@/, '').replace(/^contact-/, '');
+
+  db.contacts = db.contacts.filter(c => {
+    const cCleanId = c.id.toLowerCase().replace(/^contact-/, '');
+    const cCleanUser = (c.username || '').toLowerCase().replace(/^@/, '');
+    const isMatch =
+      c.id.toLowerCase() === idOrUsername.toLowerCase() ||
+      cCleanId === clean ||
+      Boolean(cCleanUser && cCleanUser === clean);
+    return !isMatch;
+  });
+
+  db.messages = db.messages.filter(m => {
+    const mCleanId = m.peerId.toLowerCase().replace(/^contact-/, '');
+    return m.peerId.toLowerCase() !== idOrUsername.toLowerCase() && mCleanId !== clean;
+  });
+
+  delete db.settings.contactNotifications[idOrUsername];
+  delete db.settings.contactNotifications[`contact-${clean}`];
   saveDb(db);
   return db.contacts.length < initialLen;
 }
@@ -233,12 +249,28 @@ export function addApprovedChannel(channel: ApprovedChannel): ApprovedChannel {
   return channel;
 }
 
-export function removeApprovedChannel(id: string): boolean {
+export function removeApprovedChannel(idOrUsername: string): boolean {
   const db = getDb();
   const initialLen = db.channels.length;
-  db.channels = db.channels.filter(c => c.id !== id && c.username !== id);
-  db.messages = db.messages.filter(m => m.peerId !== id);
-  delete db.settings.channelNotifications[id];
+  const clean = idOrUsername.toLowerCase().trim().replace(/^@/, '').replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+
+  db.channels = db.channels.filter(c => {
+    const cCleanId = c.id.toLowerCase().replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+    const cCleanUser = (c.username || '').toLowerCase().replace(/^@/, '');
+    const isMatch =
+      c.id.toLowerCase() === idOrUsername.toLowerCase() ||
+      cCleanId === clean ||
+      Boolean(cCleanUser && cCleanUser === clean);
+    return !isMatch;
+  });
+
+  db.messages = db.messages.filter(m => {
+    const mCleanId = m.peerId.toLowerCase().replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+    return m.peerId.toLowerCase() !== idOrUsername.toLowerCase() && mCleanId !== clean;
+  });
+
+  delete db.settings.channelNotifications[idOrUsername];
+  delete db.settings.channelNotifications[`channel-${clean}`];
   saveDb(db);
   return db.channels.length < initialLen;
 }

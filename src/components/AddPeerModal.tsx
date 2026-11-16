@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { UserPlus, Radio, AlertCircle, CheckCircle2, Loader2, Lock, Users, Plus, Check, Search } from 'lucide-react';
+import { UserPlus, Radio, AlertCircle, CheckCircle2, Loader2, Lock, Users, Plus, Check, Search, Trash2 } from 'lucide-react';
+import { ApprovedChannel, ApprovedContact } from '@/lib/types';
 
 interface AddPeerModalProps {
   isOpen: boolean;
@@ -9,6 +10,10 @@ interface AddPeerModalProps {
   onClose: () => void;
   onSuccess: (data: unknown) => void;
   onOpenConnectModal?: () => void;
+  onRemoveChannel?: (id: string) => void;
+  onRemoveContact?: (id: string) => void;
+  currentChannels?: ApprovedChannel[];
+  currentContacts?: ApprovedContact[];
 }
 
 interface JoinedDialogItem {
@@ -22,7 +27,17 @@ interface JoinedDialogItem {
   isAlreadyAdded?: boolean;
 }
 
-export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectModal }: AddPeerModalProps) {
+export function AddPeerModal({
+  isOpen,
+  type,
+  onClose,
+  onSuccess,
+  onOpenConnectModal,
+  onRemoveChannel,
+  onRemoveContact,
+  currentChannels = [],
+  currentContacts = [],
+}: AddPeerModalProps) {
   const [activeTab, setActiveTab] = useState<'username' | 'dialogs'>('username');
   const [username, setUsername] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,6 +45,7 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
   const [loadingDialogs, setLoadingDialogs] = useState(false);
   const [isNotConnected, setIsNotConnected] = useState(false);
   const [addingDialogId, setAddingDialogId] = useState<string | null>(null);
+  const [removingDialogId, setRemovingDialogId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -187,13 +203,51 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
       setSuccessMsg(`Added "${d.title}" to Approved list`);
       setTimeout(() => {
         onSuccess(data);
-        onClose();
         setSuccessMsg(null);
       }, 700);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to add item');
     } finally {
       setAddingDialogId(null);
+    }
+  };
+
+  const handleRemoveDialog = async (d: JoinedDialogItem) => {
+    setRemovingDialogId(d.id);
+    setError(null);
+    try {
+      const cleanId = String(d.id).replace(/^contact-/, '').replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+      const targetId = isContact
+        ? (currentContacts.find(c => c.id === d.id || c.id === `contact-${cleanId}` || (d.username && c.username.toLowerCase() === d.username.toLowerCase()))?.id || `contact-${cleanId}`)
+        : (currentChannels.find(ch => ch.id === d.id || ch.id === `channel-${cleanId}` || (d.username && ch.username.toLowerCase() === d.username.toLowerCase()))?.id || `channel-${cleanId}`);
+
+      const endpoint = isContact ? `/api/contacts?id=${encodeURIComponent(targetId)}` : `/api/channels?id=${encodeURIComponent(targetId)}`;
+      const res = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Failed to remove ${isContact ? 'contact' : 'group/channel'}`);
+      }
+
+      if (isContact && onRemoveContact) {
+        onRemoveContact(targetId);
+      } else if (!isContact && onRemoveChannel) {
+        onRemoveChannel(targetId);
+      }
+
+      setDialogs((prev) =>
+        prev.map((item) => (item.id === d.id ? { ...item, isAlreadyAdded: false } : item))
+      );
+      setSuccessMsg(`Removed "${d.title}" from Approved list`);
+      setTimeout(() => {
+        setSuccessMsg(null);
+      }, 1500);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to remove item');
+    } finally {
+      setRemovingDialogId(null);
     }
   };
 
@@ -407,49 +461,81 @@ export function AddPeerModal({ isOpen, type, onClose, onSuccess, onOpenConnectMo
 
               return (
                 <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  {filtered.map((d) => (
-                    <div
-                      key={d.id}
-                      className="p-2.5 bg-white border border-stone-200 rounded-lg flex items-center justify-between hover:border-stone-300 transition"
-                    >
-                      <div className="overflow-hidden flex-1 mr-2">
-                        <div className="flex items-center space-x-1.5">
-                          <span className="text-xs font-medium text-stone-900 truncate">
-                            {d.title}
-                          </span>
-                          {d.isPrivate && !isContact && (
-                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 border border-stone-200">
-                              Private
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2 text-[10px] text-stone-400 font-mono mt-0.5">
-                          <span>{isContact ? 'Contact' : d.isGroup ? 'Group' : 'Channel'}</span>
-                          {d.username && <span>@{d.username}</span>}
-                        </div>
-                      </div>
+                  {filtered.map((d) => {
+                    const cleanId = String(d.id).replace(/^contact-/, '').replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+                    const isAdded = d.isAlreadyAdded || (
+                      isContact
+                        ? currentContacts.some((c) => {
+                            const cClean = c.id.replace(/^contact-/, '');
+                            return c.id === d.id || cClean === cleanId || Boolean(d.username && c.username && c.username.toLowerCase() === d.username.toLowerCase());
+                          })
+                        : currentChannels.some((ch) => {
+                            const chClean = ch.id.replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+                            return ch.id === d.id || chClean === cleanId || Boolean(d.username && ch.username && ch.username.toLowerCase() === d.username.toLowerCase());
+                          })
+                    );
 
-                      {d.isAlreadyAdded ? (
-                        <span className="text-[10px] font-mono text-emerald-600 flex items-center space-x-1 shrink-0 px-2 py-1 bg-emerald-50 rounded">
-                          <Check className="w-3 h-3" />
-                          <span>Added</span>
-                        </span>
-                      ) : (
-                        <button
-                          onClick={() => handleAddDialog(d)}
-                          disabled={addingDialogId === d.id}
-                          className="px-2.5 py-1 text-[11px] font-medium bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-40 rounded flex items-center space-x-1 shrink-0 cursor-pointer transition shadow-2xs"
-                        >
-                          {addingDialogId === d.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Plus className="w-3 h-3" />
-                          )}
-                          <span>Add</span>
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                    return (
+                      <div
+                        key={d.id}
+                        className="p-2.5 bg-white border border-stone-200 rounded-lg flex items-center justify-between hover:border-stone-300 transition"
+                      >
+                        <div className="overflow-hidden flex-1 mr-2">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="text-xs font-medium text-stone-900 truncate">
+                              {d.title}
+                            </span>
+                            {d.isPrivate && !isContact && (
+                              <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 border border-stone-200">
+                                Private
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2 text-[10px] text-stone-400 font-mono mt-0.5">
+                            <span>{isContact ? 'Contact' : d.isGroup ? 'Group' : 'Channel'}</span>
+                            {d.username && <span>@{d.username}</span>}
+                          </div>
+                        </div>
+
+                        {isAdded ? (
+                          <div className="flex items-center space-x-1.5 shrink-0">
+                            <span className="text-[10px] font-mono text-emerald-600 flex items-center space-x-1 px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-200">
+                              <Check className="w-3 h-3" />
+                              <span>Added</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveDialog(d)}
+                              disabled={removingDialogId === d.id}
+                              className="px-2 py-1 text-[11px] font-medium bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded flex items-center space-x-1 shrink-0 cursor-pointer transition shadow-2xs"
+                              title="Remove / De-add from list"
+                            >
+                              {removingDialogId === d.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3 h-3" />
+                              )}
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleAddDialog(d)}
+                            disabled={addingDialogId === d.id}
+                            className="px-2.5 py-1 text-[11px] font-medium bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-40 rounded flex items-center space-x-1 shrink-0 cursor-pointer transition shadow-2xs"
+                          >
+                            {addingDialogId === d.id ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Plus className="w-3 h-3" />
+                            )}
+                            <span>Add</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}

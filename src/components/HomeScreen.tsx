@@ -345,7 +345,7 @@ export function HomeScreen({
                             className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer ${
                               channel.isPinned
                                 ? 'text-amber-500'
-                                : 'text-stone-300 hover:text-stone-600 opacity-0 group-hover:opacity-100'
+                                : 'text-stone-300 dark:text-stone-600 hover:text-stone-600 dark:hover:text-stone-300 md:opacity-0 md:group-hover:opacity-100'
                             }`}
                             title={channel.isPinned ? 'Unpin channel' : 'Pin channel to top'}
                           >
@@ -361,7 +361,7 @@ export function HomeScreen({
                                 onRemoveChannel(channel.id);
                               }
                             }}
-                            className="p-1.5 rounded-lg text-stone-300 hover:text-red-600 hover:bg-stone-100 dark:hover:bg-stone-800 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
                             title="Remove channel"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -458,7 +458,7 @@ export function HomeScreen({
                             className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition cursor-pointer ${
                               contact.isPinned
                                 ? 'text-amber-500'
-                                : 'text-stone-300 hover:text-stone-600 opacity-0 group-hover:opacity-100'
+                                : 'text-stone-300 dark:text-stone-600 hover:text-stone-600 dark:hover:text-stone-300 md:opacity-0 md:group-hover:opacity-100'
                             }`}
                             title={contact.isPinned ? 'Unpin contact' : 'Pin to top'}
                           >
@@ -475,7 +475,7 @@ export function HomeScreen({
                                 onRemoveContact(contact.id);
                               }
                             }}
-                            className="p-1.5 rounded-lg text-stone-300 hover:text-red-600 hover:bg-stone-100 dark:hover:bg-stone-800 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition cursor-pointer"
                             title="Remove contact"
                           >
                             <UserMinus className="w-3.5 h-3.5" />

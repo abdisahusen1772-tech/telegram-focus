@@ -13,9 +13,21 @@ export function syncPeersFromHeaders(req?: NextRequest): void {
     const channelsHeader = req.headers.get('x-telegram-channels');
     if (channelsHeader) {
       const parsedChannels = JSON.parse(decodeURIComponent(channelsHeader)) as ApprovedChannel[];
-      if (Array.isArray(parsedChannels) && parsedChannels.length > 0) {
+      if (Array.isArray(parsedChannels)) {
         const db = getDb();
-        let changed = false;
+        const clientIds = new Set(parsedChannels.map(c => c.id));
+        const clientCleanIds = new Set(parsedChannels.map(c => c.id.replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '')));
+        const clientUsers = new Set(parsedChannels.map(c => (c.username || '').toLowerCase().replace(/^@/, '')).filter(Boolean));
+
+        // Prune any channels from server that the client explicitly removed
+        const initialLen = db.channels.length;
+        db.channels = db.channels.filter(c => {
+          const cClean = c.id.replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+          const cUser = (c.username || '').toLowerCase().replace(/^@/, '');
+          return clientIds.has(c.id) || clientCleanIds.has(cClean) || Boolean(cUser && clientUsers.has(cUser));
+        });
+
+        // Add any channels from client that server is missing
         for (const ch of parsedChannels) {
           if (!ch || !ch.id) continue;
           const exists = db.channels.some(
@@ -26,10 +38,9 @@ export function syncPeersFromHeaders(req?: NextRequest): void {
             if (!db.settings.channelNotifications[ch.id]) {
               db.settings.channelNotifications[ch.id] = ch.notificationsEnabled ?? true;
             }
-            changed = true;
           }
         }
-        if (changed) {
+        if (db.channels.length !== initialLen || parsedChannels.length > 0) {
           saveDb(db);
         }
       }
@@ -42,9 +53,21 @@ export function syncPeersFromHeaders(req?: NextRequest): void {
     const contactsHeader = req.headers.get('x-telegram-contacts');
     if (contactsHeader) {
       const parsedContacts = JSON.parse(decodeURIComponent(contactsHeader)) as ApprovedContact[];
-      if (Array.isArray(parsedContacts) && parsedContacts.length > 0) {
+      if (Array.isArray(parsedContacts)) {
         const db = getDb();
-        let changed = false;
+        const clientIds = new Set(parsedContacts.map(c => c.id));
+        const clientCleanIds = new Set(parsedContacts.map(c => c.id.replace(/^contact-/, '')));
+        const clientUsers = new Set(parsedContacts.map(c => (c.username || '').toLowerCase().replace(/^@/, '')).filter(Boolean));
+
+        // Prune any contacts from server that the client explicitly removed
+        const initialLen = db.contacts.length;
+        db.contacts = db.contacts.filter(c => {
+          const cClean = c.id.replace(/^contact-/, '');
+          const cUser = (c.username || '').toLowerCase().replace(/^@/, '');
+          return clientIds.has(c.id) || clientCleanIds.has(cClean) || Boolean(cUser && clientUsers.has(cUser));
+        });
+
+        // Add any contacts from client that server is missing
         for (const c of parsedContacts) {
           if (!c || !c.id) continue;
           const exists = db.contacts.some(
@@ -55,10 +78,9 @@ export function syncPeersFromHeaders(req?: NextRequest): void {
             if (!db.settings.contactNotifications[c.id]) {
               db.settings.contactNotifications[c.id] = c.notificationsEnabled ?? true;
             }
-            changed = true;
           }
         }
-        if (changed) {
+        if (db.contacts.length !== initialLen || parsedContacts.length > 0) {
           saveDb(db);
         }
       }

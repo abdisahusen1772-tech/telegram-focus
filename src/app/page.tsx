@@ -278,9 +278,22 @@ export default function TelegramFocusApp() {
         prevUnreadContactsRef.current = unreadSet;
         initialLoadDoneRef.current = true;
 
+        // Read tombstones so removed peers are not resurrected
+        let removedContactIds: string[] = [];
+        if (typeof window !== 'undefined') {
+          try {
+            removedContactIds = JSON.parse(localStorage.getItem('tg_removed_contacts') || '[]');
+          } catch {}
+        }
+        const filteredContacts = newContacts.filter((c) => {
+          const cClean = c.id.toLowerCase().replace(/^contact-/, '');
+          const cUser = (c.username || '').toLowerCase().replace(/^@/, '');
+          return !removedContactIds.includes(c.id) && !removedContactIds.includes(cClean) && (!cUser || !removedContactIds.includes(cUser));
+        });
+
         setContacts((prevLocal) => {
           // If server returned empty, but we have local contacts, don't wipe! Re-sync to server.
-          if (newContacts.length === 0 && prevLocal.length > 0) {
+          if (filteredContacts.length === 0 && prevLocal.length > 0) {
             fetch('/api/contacts', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', ...authHeaders },
@@ -291,8 +304,14 @@ export default function TelegramFocusApp() {
 
           // Merge server and local (server takes precedence for dynamic status/unreadCount)
           const map = new Map<string, ApprovedContact>();
-          prevLocal.forEach((c) => map.set(c.id, c));
-          newContacts.forEach((c) => {
+          prevLocal.forEach((c) => {
+            const cClean = c.id.toLowerCase().replace(/^contact-/, '');
+            const cUser = (c.username || '').toLowerCase().replace(/^@/, '');
+            if (!removedContactIds.includes(c.id) && !removedContactIds.includes(cClean) && (!cUser || !removedContactIds.includes(cUser))) {
+              map.set(c.id, c);
+            }
+          });
+          filteredContacts.forEach((c) => {
             const existing = map.get(c.id);
             map.set(c.id, { ...existing, ...c });
           });
@@ -308,7 +327,18 @@ export default function TelegramFocusApp() {
       const channelsRes = await fetch('/api/channels', { headers: authHeaders });
       const channelsData = await channelsRes.json();
       if (channelsData.success && Array.isArray(channelsData.channels)) {
-        const serverChannels: ApprovedChannel[] = channelsData.channels;
+        let removedChannelIds: string[] = [];
+        if (typeof window !== 'undefined') {
+          try {
+            removedChannelIds = JSON.parse(localStorage.getItem('tg_removed_channels') || '[]');
+          } catch {}
+        }
+        const serverChannels: ApprovedChannel[] = channelsData.channels.filter((ch: ApprovedChannel) => {
+          const chClean = ch.id.toLowerCase().replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+          const chUser = (ch.username || '').toLowerCase().replace(/^@/, '');
+          return !removedChannelIds.includes(ch.id) && !removedChannelIds.includes(chClean) && (!chUser || !removedChannelIds.includes(chUser));
+        });
+
         setChannels((prevLocal) => {
           // If server returned empty, but we have local channels, don't wipe! Re-sync to server.
           if (serverChannels.length === 0 && prevLocal.length > 0) {
@@ -322,7 +352,13 @@ export default function TelegramFocusApp() {
 
           // Merge server and local
           const map = new Map<string, ApprovedChannel>();
-          prevLocal.forEach((ch) => map.set(ch.id, ch));
+          prevLocal.forEach((ch) => {
+            const chClean = ch.id.toLowerCase().replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+            const chUser = (ch.username || '').toLowerCase().replace(/^@/, '');
+            if (!removedChannelIds.includes(ch.id) && !removedChannelIds.includes(chClean) && (!chUser || !removedChannelIds.includes(chUser))) {
+              map.set(ch.id, ch);
+            }
+          });
           serverChannels.forEach((ch) => {
             const existing = map.get(ch.id);
             map.set(ch.id, { ...existing, ...ch });
@@ -503,38 +539,70 @@ export default function TelegramFocusApp() {
   };
 
   const handleRemoveContact = async (id: string) => {
+    const clean = id.toLowerCase().trim().replace(/^@/, '').replace(/^contact-/, '');
+
+    // 1. Immediately update state & localStorage
+    setContacts((prev) => {
+      const updated = prev.filter((c) => {
+        const cCleanId = c.id.toLowerCase().replace(/^contact-/, '');
+        const cCleanUser = (c.username || '').toLowerCase().replace(/^@/, '');
+        return c.id !== id && cCleanId !== clean && (!cCleanUser || cCleanUser !== clean);
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('tg_focus_contacts', JSON.stringify(updated));
+        try {
+          const removed: string[] = JSON.parse(localStorage.getItem('tg_removed_contacts') || '[]');
+          if (!removed.includes(id)) removed.push(id);
+          if (!removed.includes(clean)) removed.push(clean);
+          localStorage.setItem('tg_removed_contacts', JSON.stringify(removed));
+        } catch {}
+      }
+      return updated;
+    });
+
+    if (activeContact?.id === id) setActiveContact(null);
+
+    // 2. Notify server to delete
     try {
-      await fetch(`/api/contacts?id=${id}`, {
+      await fetch(`/api/contacts?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
-      setContacts((prev) => {
-        const updated = prev.filter((c) => c.id !== id);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('tg_focus_contacts', JSON.stringify(updated));
-        }
-        return updated;
-      });
-      if (activeContact?.id === id) setActiveContact(null);
     } catch (e) {
       console.error('Failed to remove contact:', e);
     }
   };
 
   const handleRemoveChannel = async (id: string) => {
+    const clean = id.toLowerCase().trim().replace(/^@/, '').replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+
+    // 1. Immediately update state & localStorage
+    setChannels((prev) => {
+      const updated = prev.filter((ch) => {
+        const chCleanId = ch.id.toLowerCase().replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
+        const chCleanUser = (ch.username || '').toLowerCase().replace(/^@/, '');
+        return ch.id !== id && chCleanId !== clean && (!chCleanUser || chCleanUser !== clean);
+      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('tg_focus_channels', JSON.stringify(updated));
+        try {
+          const removed: string[] = JSON.parse(localStorage.getItem('tg_removed_channels') || '[]');
+          if (!removed.includes(id)) removed.push(id);
+          if (!removed.includes(clean)) removed.push(clean);
+          localStorage.setItem('tg_removed_channels', JSON.stringify(removed));
+        } catch {}
+      }
+      return updated;
+    });
+
+    if (activeChannel?.id === id) setActiveChannel(null);
+
+    // 2. Notify server to delete
     try {
-      await fetch(`/api/channels?id=${id}`, {
+      await fetch(`/api/channels?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: getAuthHeaders(),
       });
-      setChannels((prev) => {
-        const updated = prev.filter((ch) => ch.id !== id);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('tg_focus_channels', JSON.stringify(updated));
-        }
-        return updated;
-      });
-      if (activeChannel?.id === id) setActiveChannel(null);
     } catch (e) {
       console.error('Failed to remove channel:', e);
     }
@@ -914,24 +982,42 @@ export default function TelegramFocusApp() {
           isOpen={Boolean(addModalType)}
           type={addModalType}
           onClose={() => setAddModalType(null)}
+          onRemoveChannel={handleRemoveChannel}
+          onRemoveContact={handleRemoveContact}
+          currentChannels={channels}
+          currentContacts={contacts}
           onSuccess={(data: unknown) => {
             const peerData = data as { channel?: ApprovedChannel; contact?: ApprovedContact } | undefined;
             if (peerData?.channel) {
+              const ch = peerData.channel;
+              const clean = ch.id.toLowerCase().replace(/^channel-/, '').replace(/^-100/, '').replace(/^-/, '');
               setChannels((prev) => {
-                const exists = prev.some((c) => c.id === peerData.channel!.id || c.username.toLowerCase() === peerData.channel!.username.toLowerCase());
-                const updated = exists ? prev : [peerData.channel!, ...prev];
+                const exists = prev.some((c) => c.id === ch.id || (c.username && ch.username && c.username.toLowerCase() === ch.username.toLowerCase()));
+                const updated = exists ? prev : [ch, ...prev];
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('tg_focus_channels', JSON.stringify(updated));
+                  try {
+                    const removed: string[] = JSON.parse(localStorage.getItem('tg_removed_channels') || '[]');
+                    const filtered = removed.filter((r) => r !== ch.id && r !== clean && (!ch.username || r !== ch.username.toLowerCase()));
+                    localStorage.setItem('tg_removed_channels', JSON.stringify(filtered));
+                  } catch {}
                 }
                 return updated;
               });
             }
             if (peerData?.contact) {
+              const ct = peerData.contact;
+              const clean = ct.id.toLowerCase().replace(/^contact-/, '');
               setContacts((prev) => {
-                const exists = prev.some((c) => c.id === peerData.contact!.id || c.username.toLowerCase() === peerData.contact!.username.toLowerCase());
-                const updated = exists ? prev : [peerData.contact!, ...prev];
+                const exists = prev.some((c) => c.id === ct.id || (c.username && ct.username && c.username.toLowerCase() === ct.username.toLowerCase()));
+                const updated = exists ? prev : [ct, ...prev];
                 if (typeof window !== 'undefined') {
                   localStorage.setItem('tg_focus_contacts', JSON.stringify(updated));
+                  try {
+                    const removed: string[] = JSON.parse(localStorage.getItem('tg_removed_contacts') || '[]');
+                    const filtered = removed.filter((r) => r !== ct.id && r !== clean && (!ct.username || r !== ct.username.toLowerCase()));
+                    localStorage.setItem('tg_removed_contacts', JSON.stringify(filtered));
+                  } catch {}
                 }
                 return updated;
               });
