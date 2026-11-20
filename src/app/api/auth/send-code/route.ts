@@ -16,7 +16,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await sendTelegramVerificationCode(phoneNumber, apiId, apiHash);
+    const effectiveApiId = apiId || req.headers.get('x-telegram-api-id') || undefined;
+    const effectiveApiHash = apiHash || req.headers.get('x-telegram-api-hash') || undefined;
+
+    const result = await sendTelegramVerificationCode(phoneNumber, effectiveApiId, effectiveApiHash);
 
     if (!result.success) {
       return NextResponse.json(

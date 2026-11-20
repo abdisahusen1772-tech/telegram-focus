@@ -7,9 +7,41 @@ import { ApprovedContact, ApprovedChannel, Message, UserSession } from './types'
 let activeClient: TelegramClient | null = null;
 let connectingPromise: Promise<TelegramClient | null> | null = null;
 let lastSessionUsed: string | null = null;
+let lastApiIdUsed: number | null = null;
 let currentPhoneCodeHash: string | null = null;
 let currentPhoneNumber: string | null = null;
 let lastUnreadSyncTime = 0;
+
+export function formatTelegramError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes('API_ID_INVALID') || msg.includes('API_ID_PUBLISHED_FLOOD')) {
+    return 'Invalid Telegram API ID or API Hash. Please verify your App api_id and App api_hash from https://my.telegram.org (under API Development Tools).';
+  }
+  if (msg.includes('PHONE_NUMBER_INVALID')) {
+    return 'Invalid phone number format. Please ensure your international country code is included (e.g. +251 9... or +1...).';
+  }
+  if (msg.includes('PHONE_CODE_INVALID')) {
+    return 'Incorrect Telegram verification code. Please check your Telegram app messages and enter the latest code.';
+  }
+  if (msg.includes('PHONE_CODE_EXPIRED')) {
+    return 'The verification code has expired. Please go back and request a new code.';
+  }
+  if (msg.includes('PHONE_NUMBER_BANNED')) {
+    return 'This phone number has been banned or restricted by Telegram.';
+  }
+  if (msg.includes('FLOOD_WAIT')) {
+    const match = msg.match(/FLOOD_WAIT_(\d+)/i) || msg.match(/(\d+)\s*seconds/i);
+    const sec = match ? match[1] : 'a few';
+    return `Telegram rate limit: please wait ${sec} seconds before trying again.`;
+  }
+  if (msg.includes('PASSWORD_HASH_INVALID')) {
+    return 'Incorrect Two-Factor Authentication (2FA) password. Please try again.';
+  }
+  if (msg.includes('AUTH_KEY_UNREGISTERED')) {
+    return 'Your Telegram session has been invalidated or revoked. Please log in again.';
+  }
+  return msg;
+}
 
 export function getActiveApiCredentials(): { apiId: number; apiHash: string } | null {
   const creds = getApiCredentials();
@@ -38,18 +70,19 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
     return null;
   }
 
-  // If activeClient is already connected for this session, reuse immediately
-  if (activeClient && activeClient.connected && lastSessionUsed === sessionString) {
+  // If activeClient is already connected for this session and matching apiId, reuse immediately
+  if (activeClient && activeClient.connected && lastSessionUsed === sessionString && lastApiIdUsed === apiId) {
     return activeClient;
   }
 
-  // If already connecting for this session, share in-flight promise to avoid MTProto collision
-  if (connectingPromise && lastSessionUsed === sessionString) {
+  // If already connecting for this session and apiId, share in-flight promise to avoid MTProto collision
+  if (connectingPromise && lastSessionUsed === sessionString && lastApiIdUsed === apiId) {
     return connectingPromise;
   }
 
   connectingPromise = (async () => {
     lastSessionUsed = sessionString;
+    lastApiIdUsed = apiId;
 
     // Disconnect any stale or mismatched client cleanly
     if (activeClient) {
@@ -63,8 +96,9 @@ export async function getOrInitTelegramClient(customSessionString?: string): Pro
       try {
         const stringSession = new StringSession(sessionString);
         const client = new TelegramClient(stringSession, apiId, apiHash, {
-          connectionRetries: 5,
+          connectionRetries: 3,
           autoReconnect: true,
+          timeout: 15,
         });
 
         const connectPromise = client.connect();
@@ -130,14 +164,23 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
   if (creds) {
     try {
       const { apiId, apiHash } = creds;
+
+      if (activeClient) {
+        try {
+          await activeClient.disconnect();
+        } catch {}
+        activeClient = null;
+      }
+
       const stringSession = new StringSession('');
       const client = new TelegramClient(stringSession, apiId, apiHash, {
         connectionRetries: 3,
-        timeout: 10,
+        timeout: 15,
       });
 
       await client.connect();
       activeClient = client;
+      lastApiIdUsed = apiId;
 
       const result = await client.sendCode(
         {
@@ -160,7 +203,7 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
       };
     } catch (err: unknown) {
       console.error('Telegram MTProto sendCode error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to send Telegram code';
+      const errorMessage = formatTelegramError(err);
       return {
         success: false,
         error: errorMessage,
@@ -188,6 +231,8 @@ export async function signInWithTelegramCode(params: {
   phoneCodeHash: string;
   password?: string;
   intermediateSession?: string;
+  apiId?: string | number;
+  apiHash?: string;
 }): Promise<{
   success: boolean;
   needs2FA?: boolean;
@@ -201,7 +246,12 @@ export async function signInWithTelegramCode(params: {
   };
   error?: string;
 }> {
-  const { phoneNumber, phoneCode, phoneCodeHash, password, intermediateSession } = params;
+  const { phoneNumber, phoneCode, phoneCodeHash, password, intermediateSession, apiId: paramApiId, apiHash: paramApiHash } = params;
+
+  if (paramApiId && paramApiHash) {
+    setApiCredentials(String(paramApiId).trim(), String(paramApiHash).trim());
+  }
+
   let cleanPhone = phoneNumber.trim().replace(/[\s\-\(\)]/g, '');
   if (/^0[79]\d{8}$/.test(cleanPhone)) {
     cleanPhone = '+251' + cleanPhone.slice(1);
@@ -214,13 +264,20 @@ export async function signInWithTelegramCode(params: {
     try {
       const { apiId, apiHash } = creds;
 
-      if (!activeClient || !activeClient.connected) {
+      if (!activeClient || !activeClient.connected || lastApiIdUsed !== apiId) {
+        if (activeClient) {
+          try {
+            await activeClient.disconnect();
+          } catch {}
+          activeClient = null;
+        }
         const stringSession = new StringSession(intermediateSession || '');
         activeClient = new TelegramClient(stringSession, apiId, apiHash, {
           connectionRetries: 3,
-          timeout: 12,
+          timeout: 15,
         });
         await activeClient.connect();
+        lastApiIdUsed = apiId;
       }
 
       try {
@@ -298,7 +355,7 @@ export async function signInWithTelegramCode(params: {
       };
     } catch (err: unknown) {
       console.error('Telegram MTProto signIn error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Invalid code or authentication error';
+      const errorMessage = formatTelegramError(err);
       return {
         success: false,
         error: errorMessage,

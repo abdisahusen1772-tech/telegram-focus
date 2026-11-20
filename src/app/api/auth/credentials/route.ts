@@ -6,8 +6,13 @@ import path from 'path';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const headerApiId = req.headers.get('x-telegram-api-id');
+    const headerApiHash = req.headers.get('x-telegram-api-hash');
+    if (headerApiId && headerApiHash && headerApiId.trim() && headerApiHash.trim()) {
+      setApiCredentials(headerApiId.trim(), headerApiHash.trim());
+    }
     const creds = getApiCredentials();
     return NextResponse.json({
       success: true,

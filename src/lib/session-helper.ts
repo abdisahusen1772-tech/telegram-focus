@@ -1,6 +1,23 @@
 import { NextRequest } from 'next/server';
 import { UserSession, ApprovedChannel, ApprovedContact } from './types';
-import { getUserSession, setUserSession, getDb, saveDb } from './db';
+import { getUserSession, setUserSession, getDb, saveDb, setApiCredentials } from './db';
+
+/**
+ * Synchronize client's Telegram API credentials (ID and Hash) into serverless memory/disk
+ * so requests never revert to defaults on cold starts or across lambda instances.
+ */
+export function syncApiCredentialsFromHeaders(req?: NextRequest): void {
+  if (!req) return;
+  try {
+    const apiId = req.headers.get('x-telegram-api-id');
+    const apiHash = req.headers.get('x-telegram-api-hash');
+    if (apiId && apiHash && apiId.trim() && apiHash.trim()) {
+      setApiCredentials(apiId.trim(), apiHash.trim());
+    }
+  } catch (err) {
+    // ignore header parse errors
+  }
+}
 
 /**
  * Restore client's approved channels and contacts into serverless memory/disk
@@ -98,8 +115,9 @@ export function syncPeersFromHeaders(req?: NextRequest): void {
  * 3. In-memory / disk session from getDb()
  */
 export function resolveSession(req?: NextRequest): UserSession | null {
-  // Always sync peer lists if headers are provided
+  // Always sync API credentials and peer lists if headers are provided
   if (req) {
+    syncApiCredentialsFromHeaders(req);
     syncPeersFromHeaders(req);
   }
 

@@ -32,6 +32,10 @@ export function ForwardModal({
     const headers: Record<string, string> = {};
     const token = localStorage.getItem('tg_focus_session');
     if (token) headers['x-telegram-session'] = token;
+    const localApiId = localStorage.getItem('tg_api_id');
+    const localApiHash = localStorage.getItem('tg_api_hash');
+    if (localApiId) headers['x-telegram-api-id'] = localApiId;
+    if (localApiHash) headers['x-telegram-api-hash'] = localApiHash;
     const savedUser = localStorage.getItem('tg_focus_user');
     if (savedUser) {
       try {

@@ -63,6 +63,15 @@ export function SettingsView({
   const [credsSaveMessage, setCredsSaveMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const localId = localStorage.getItem('tg_api_id');
+      const localHash = localStorage.getItem('tg_api_hash');
+      if (localId && localHash) {
+        setApiIdInput(localId);
+        setApiHashInput(localHash);
+        return;
+      }
+    }
     fetch('/api/auth/credentials')
       .then((r) => r.json())
       .then((d) => {
@@ -79,18 +88,30 @@ export function SettingsView({
     setSavingCreds(true);
     setCredsSaveMessage(null);
 
+    const cleanId = apiIdInput.trim().replace(/['"]/g, '');
+    const cleanHash = apiHashInput.trim().replace(/['"]/g, '');
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tg_api_id', cleanId);
+      localStorage.setItem('tg_api_hash', cleanHash);
+    }
+
     try {
       const res = await fetch('/api/auth/credentials', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-telegram-api-id': cleanId,
+          'x-telegram-api-hash': cleanHash,
+        },
         body: JSON.stringify({
-          apiId: apiIdInput.trim(),
-          apiHash: apiHashInput.trim(),
+          apiId: cleanId,
+          apiHash: cleanHash,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setCredsSaveMessage('✓ Credentials saved & activated successfully!');
+        setCredsSaveMessage('✓ Credentials saved and activated in browser & server!');
         setTimeout(() => setCredsSaveMessage(null), 3500);
       } else {
         setCredsSaveMessage(`✕ Error: ${data.error || 'Failed to save'}`);
@@ -100,6 +121,25 @@ export function SettingsView({
     } finally {
       setSavingCreds(false);
     }
+  };
+
+  const handleResetDefaultCredentials = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tg_api_id');
+      localStorage.removeItem('tg_api_hash');
+    }
+    setApiIdInput('36393150');
+    setApiHashInput('b08cd895004d8d1702eceab9e335dc06');
+    fetch('/api/auth/credentials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiId: '36393150',
+        apiHash: 'b08cd895004d8d1702eceab9e335dc06',
+      }),
+    }).catch(() => {});
+    setCredsSaveMessage('✓ Reset to pre-configured Telegram keys.');
+    setTimeout(() => setCredsSaveMessage(null), 3000);
   };
 
   const handleClearCache = async () => {
@@ -254,6 +294,16 @@ export function SettingsView({
               <Key className="w-3.5 h-3.5" />
               <span>{savingCreds ? 'Saving...' : 'Save Credentials'}</span>
             </button>
+            {apiIdInput !== '36393150' && (
+              <button
+                type="button"
+                onClick={handleResetDefaultCredentials}
+                className="py-2.5 px-3 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-medium rounded-lg transition cursor-pointer border border-stone-200 font-mono"
+                title="Reset to pre-configured Telegram keys"
+              >
+                Reset Default
+              </button>
+            )}
             <button
               onClick={onOpenConnectModal}
               className="py-2.5 px-3 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-medium rounded-lg transition cursor-pointer border border-stone-200"

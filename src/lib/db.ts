@@ -534,10 +534,14 @@ export function getApiCredentials(): { apiId: string; apiHash: string } {
 
 export function setApiCredentials(apiId: string, apiHash: string): void {
   const db = getDb();
+  const cleanId = String(apiId).trim().replace(/['"]/g, '');
+  const cleanHash = String(apiHash).trim().replace(/['"]/g, '');
   db.apiCredentials = {
-    apiId: apiId.trim(),
-    apiHash: apiHash.trim(),
+    apiId: cleanId,
+    apiHash: cleanHash,
   };
+  process.env.TELEGRAM_API_ID = cleanId;
+  process.env.TELEGRAM_API_HASH = cleanHash;
   saveDb(db);
 }
 
