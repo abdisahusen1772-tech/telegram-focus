@@ -37,8 +37,18 @@ export function ConnectTelegramModal({
   const [savingKeys, setSavingKeys] = useState(false);
   const [password2FA, setPassword2FA] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [statusNote, setStatusNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((c) => (c <= 1 ? 0 : c - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   // Load existing credentials if available
   useEffect(() => {
@@ -67,13 +77,24 @@ export function ConnectTelegramModal({
   if (!isOpen) return null;
 
   const formatCleanPhone = (raw: string): string => {
-    let clean = raw.trim().replace(/[\s\-\(\)]/g, '');
+    let clean = (raw || '').trim().replace(/[\s\-\(\)\.]/g, '');
+    if (!clean) return '';
+    // Ethiopian 10-digit format with leading 0: 09XXXXXXXX or 07XXXXXXXX
     if (/^0[79]\d{8}$/.test(clean)) {
-      clean = '+251' + clean.slice(1);
-    } else if (!clean.startsWith('+')) {
-      clean = '+' + clean;
+      return '+251' + clean.slice(1);
     }
-    return clean;
+    // Ethiopian 9-digit format without leading 0: 9XXXXXXXX or 7XXXXXXXX
+    if (/^[79]\d{8}$/.test(clean)) {
+      return '+251' + clean;
+    }
+    // Ethiopian with 251 prefix but no +: 2519XXXXXXXX or 2517XXXXXXXX
+    if (/^251[79]\d{8}$/.test(clean)) {
+      return '+' + clean;
+    }
+    if (clean.startsWith('+')) {
+      return clean;
+    }
+    return '+' + clean;
   };
 
   const handleSaveApiKeys = async () => {
@@ -245,6 +266,46 @@ export function ConnectTelegramModal({
     }
   };
 
+  const handleResendCode = async () => {
+    if (!phoneCodeHash || resending || resendCooldown > 0) return;
+    setResending(true);
+    setError(null);
+    try {
+      const cleanPhone = formatCleanPhone(phone);
+      const cleanId = apiId.trim().replace(/['"]/g, '');
+      const cleanHash = apiHash.trim().replace(/['"]/g, '');
+      const res = await fetch('/api/auth/resend-code', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(cleanId ? { 'x-telegram-api-id': cleanId } : {}),
+          ...(cleanHash ? { 'x-telegram-api-hash': cleanHash } : {}),
+        },
+        body: JSON.stringify({
+          phoneNumber: cleanPhone,
+          phoneCodeHash,
+          intermediateSession: intermediateSession || undefined,
+          apiId: cleanId || undefined,
+          apiHash: cleanHash || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to resend code');
+      }
+      if (data.phoneCodeHash) {
+        setPhoneCodeHash(data.phoneCodeHash);
+      }
+      setStatusNote(data.message || 'Verification code resent. Please check your Telegram app!');
+      setResendCooldown(60);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error resending code';
+      setError(msg);
+    } finally {
+      setResending(false);
+    }
+  };
+
   const handleDemoActivate = async () => {
     setLoading(true);
     setError(null);
@@ -381,7 +442,7 @@ export function ConnectTelegramModal({
             )}
 
             {/* 2. Phone Number Entry */}
-            <div className="p-3.5 bg-white border border-stone-200 rounded-xl space-y-2 shadow-2xs">
+            <div className="p-3.5 bg-white border border-stone-200 rounded-xl space-y-2.5 shadow-2xs">
               <label className="block text-xs font-semibold text-stone-900">
                 2. Your Telegram Phone Number
               </label>
@@ -391,14 +452,22 @@ export function ConnectTelegramModal({
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+1 555 123 4567"
+                  placeholder="e.g. 0973 301 772 or +251 973..."
                   required
                   autoFocus
                   className="w-full pl-9 pr-3 py-2 text-sm bg-stone-50 border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-800 transition"
                 />
               </div>
-              <p className="text-[10px] text-stone-400 font-mono">
-                Must include country code (e.g. +1, +44, +971, +90, +966)
+
+              {phone.trim() && (
+                <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-stone-100 text-[11px] font-mono text-stone-700">
+                  <span className="text-stone-400">Telegram format:</span>
+                  <span className="font-semibold text-emerald-700">{formatCleanPhone(phone)}</span>
+                </div>
+              )}
+
+              <p className="text-[10px] text-stone-500 font-sans leading-relaxed">
+                Ethiopian numbers can be entered as <strong>09...</strong>, <strong>07...</strong>, <strong>9...</strong>, or <strong>+251...</strong>. Other countries: enter with international + code.
               </p>
             </div>
 
@@ -434,13 +503,18 @@ export function ConnectTelegramModal({
 
         {step === 'code' && (
           <form onSubmit={handleVerifyCode} className="mt-4 space-y-4">
-            <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl space-y-1 text-xs text-sky-900">
-              <p className="font-semibold flex items-center space-x-1.5">
-                <span>📩 Check your official Telegram app</span>
+            <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-xl space-y-2 text-xs text-sky-950">
+              <p className="font-semibold flex items-center space-x-1.5 text-sm text-sky-900">
+                <span>📩 Code sent to {formatCleanPhone(phone)}</span>
               </p>
-              <p className="text-[11px] text-sky-700 leading-relaxed font-sans">
-                Telegram sends login codes directly inside your Telegram app (in the chat named <strong>Telegram</strong>) or via SMS.
-              </p>
+              <div className="space-y-1 text-[11px] text-sky-900 leading-relaxed font-sans">
+                <p>1. Open your <strong>Telegram app</strong> on your phone, tablet, or PC.</p>
+                <p>2. Open the official chat from <strong>&ldquo;Telegram&rdquo;</strong> (verified blue checkmark).</p>
+                <p>3. Copy the 5-digit login code and type it below.</p>
+              </div>
+              <div className="p-2 bg-amber-50/90 border border-amber-200/80 rounded-lg text-[10px] text-amber-900 font-sans leading-relaxed">
+                💡 <strong>Important:</strong> If you are logged into Telegram on any phone or device, Telegram sends the code <strong>inside the Telegram app</strong>, NOT via SMS. Check your Telegram notifications!
+              </div>
             </div>
 
             {statusNote && (
@@ -452,7 +526,7 @@ export function ConnectTelegramModal({
 
             <div>
               <label className="block text-[11px] font-mono uppercase text-stone-600 mb-1">
-                Verification Code
+                Enter 5-Digit Verification Code
               </label>
               <div className="relative">
                 <KeyRound className="w-4 h-4 absolute left-3 top-3 text-stone-400" />
@@ -475,7 +549,30 @@ export function ConnectTelegramModal({
               </div>
             )}
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center justify-between text-xs pt-0.5">
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={resending || resendCooldown > 0}
+                className="text-[11px] text-sky-600 hover:text-sky-800 font-medium disabled:opacity-50 cursor-pointer underline flex items-center space-x-1"
+              >
+                {resending && <Loader2 className="w-3 h-3 animate-spin inline mr-1" />}
+                <span>
+                  {resendCooldown > 0
+                    ? `Resend code in ${resendCooldown}s`
+                    : "Didn't get code in app? Resend via SMS"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep('phone')}
+                className="text-[11px] text-stone-500 hover:text-stone-800 font-mono underline cursor-pointer"
+              >
+                Change number
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-2 pt-1">
               <button
                 type="button"
                 onClick={() => setStep('phone')}

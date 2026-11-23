@@ -28,15 +28,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const isApp = result.deliveryType === 'app';
+    const destinationMsg = isApp
+      ? `Telegram sent your code directly inside your Telegram app to ${result.formattedPhone || phoneNumber}. Please check the official "Telegram" chat in your app!`
+      : `Telegram verification code sent via SMS to ${result.formattedPhone || phoneNumber}.`;
+
     const response = NextResponse.json({
       success: true,
       phoneCodeHash: result.phoneCodeHash,
       intermediateSession: result.intermediateSession,
       isRegistered: result.isRegistered,
+      isCodeViaApp: result.isCodeViaApp,
+      deliveryType: result.deliveryType || 'app',
+      formattedPhone: result.formattedPhone,
       isMock: result.isMock,
       message: result.isMock
         ? 'Test mode: Use verification code 12345 (or any 5-digit code) to test'
-        : 'Official Telegram verification code sent to your Telegram app / SMS',
+        : destinationMsg,
     });
 
     if (result.intermediateSession) {

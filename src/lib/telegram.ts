@@ -29,6 +29,9 @@ export function formatTelegramError(err: unknown): string {
   if (msg.includes('PHONE_NUMBER_BANNED')) {
     return 'This phone number has been banned or restricted by Telegram.';
   }
+  if (msg.includes('PHONE_NUMBER_FLOOD')) {
+    return 'Telegram rate limit: Too many code requests recently. Telegram requires you to wait before requesting another code. Please check your Telegram app notifications on your existing devices.';
+  }
   if (msg.includes('FLOOD_WAIT')) {
     const match = msg.match(/FLOOD_WAIT_(\d+)/i) || msg.match(/(\d+)\s*seconds/i);
     const sec = match ? match[1] : 'a few';
@@ -41,6 +44,33 @@ export function formatTelegramError(err: unknown): string {
     return 'Your Telegram session has been invalidated or revoked. Please log in again.';
   }
   return msg;
+}
+
+/**
+ * Universal phone number normalizer with comprehensive Ethiopian and international support
+ */
+export function normalizePhoneNumber(raw: string): string {
+  let clean = (raw || '').trim().replace(/[\s\-\(\)\.]/g, '');
+  if (!clean) return '';
+
+  // Ethiopian 10-digit format with leading zero: 09XXXXXXXX or 07XXXXXXXX
+  if (/^0[79]\d{8}$/.test(clean)) {
+    return '+251' + clean.slice(1);
+  }
+  // Ethiopian 9-digit format without leading zero: 9XXXXXXXX or 7XXXXXXXX
+  if (/^[79]\d{8}$/.test(clean)) {
+    return '+251' + clean;
+  }
+  // Ethiopian with 251 prefix but no +: 2519XXXXXXXX or 2517XXXXXXXX
+  if (/^251[79]\d{8}$/.test(clean)) {
+    return '+' + clean;
+  }
+  // If already starts with +, keep it
+  if (clean.startsWith('+')) {
+    return clean;
+  }
+  // Otherwise prepend +
+  return '+' + clean;
 }
 
 export function getActiveApiCredentials(): { apiId: number; apiHash: string } | null {
@@ -143,16 +173,13 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
   phoneCodeHash?: string;
   intermediateSession?: string;
   isRegistered?: boolean;
+  isCodeViaApp?: boolean;
+  deliveryType?: 'app' | 'sms';
+  formattedPhone?: string;
   error?: string;
   isMock?: boolean;
 }> {
-  let cleanPhone = phoneNumber.trim().replace(/[\s\-\(\)]/g, '');
-  // Auto-format Ethiopian domestic numbers (09... or 07...) to international format +251...
-  if (/^0[79]\d{8}$/.test(cleanPhone)) {
-    cleanPhone = '+251' + cleanPhone.slice(1);
-  } else if (!cleanPhone.startsWith('+')) {
-    cleanPhone = '+' + cleanPhone;
-  }
+  const cleanPhone = normalizePhoneNumber(phoneNumber);
 
   if (apiIdParam && apiHashParam) {
     setApiCredentials(apiIdParam, apiHashParam);
@@ -199,6 +226,9 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
         phoneCodeHash: result.phoneCodeHash,
         intermediateSession,
         isRegistered: result.isCodeViaApp !== undefined,
+        isCodeViaApp: Boolean(result.isCodeViaApp),
+        deliveryType: result.isCodeViaApp ? 'app' : 'sms',
+        formattedPhone: cleanPhone,
         isMock: false,
       };
     } catch (err: unknown) {
@@ -218,7 +248,81 @@ export async function sendTelegramVerificationCode(phoneNumber: string, apiIdPar
     success: true,
     phoneCodeHash: currentPhoneCodeHash,
     isRegistered: true,
+    isCodeViaApp: false,
+    deliveryType: 'sms',
+    formattedPhone: cleanPhone,
     isMock: true,
+  };
+}
+
+/**
+ * Resend Telegram verification code via SMS if not received in app
+ */
+export async function resendTelegramVerificationCode(params: {
+  phoneNumber: string;
+  phoneCodeHash: string;
+  intermediateSession?: string;
+  apiId?: string | number;
+  apiHash?: string;
+}): Promise<{
+  success: boolean;
+  phoneCodeHash?: string;
+  isCodeViaApp?: boolean;
+  error?: string;
+}> {
+  const { phoneNumber, phoneCodeHash, intermediateSession, apiId: paramApiId, apiHash: paramApiHash } = params;
+  const cleanPhone = normalizePhoneNumber(phoneNumber);
+
+  if (paramApiId && paramApiHash) {
+    setApiCredentials(String(paramApiId).trim(), String(paramApiHash).trim());
+  }
+
+  const creds = getActiveApiCredentials();
+  if (creds) {
+    try {
+      const { apiId, apiHash } = creds;
+
+      if (!activeClient || !activeClient.connected || lastApiIdUsed !== apiId) {
+        if (activeClient) {
+          try { await activeClient.disconnect(); } catch {}
+          activeClient = null;
+        }
+        const stringSession = new StringSession(intermediateSession || '');
+        activeClient = new TelegramClient(stringSession, apiId, apiHash, {
+          connectionRetries: 3,
+          timeout: 15,
+        });
+        await activeClient.connect();
+        lastApiIdUsed = apiId;
+      }
+
+      const resendResult = await activeClient.invoke(
+        new Api.auth.ResendCode({
+          phoneNumber: cleanPhone,
+          phoneCodeHash,
+        })
+      );
+
+      const resendObj = resendResult as any;
+      return {
+        success: true,
+        phoneCodeHash: resendObj.phoneCodeHash || phoneCodeHash,
+        isCodeViaApp: resendObj.type instanceof Api.auth.SentCodeTypeApp,
+      };
+    } catch (err: unknown) {
+      console.error('Telegram MTProto resendCode error:', err);
+      const errorMessage = formatTelegramError(err);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  return {
+    success: true,
+    phoneCodeHash,
+    isCodeViaApp: false,
   };
 }
 
@@ -252,12 +356,7 @@ export async function signInWithTelegramCode(params: {
     setApiCredentials(String(paramApiId).trim(), String(paramApiHash).trim());
   }
 
-  let cleanPhone = phoneNumber.trim().replace(/[\s\-\(\)]/g, '');
-  if (/^0[79]\d{8}$/.test(cleanPhone)) {
-    cleanPhone = '+251' + cleanPhone.slice(1);
-  } else if (!cleanPhone.startsWith('+')) {
-    cleanPhone = '+' + cleanPhone;
-  }
+  const cleanPhone = normalizePhoneNumber(phoneNumber);
 
   const creds = getActiveApiCredentials();
   if (creds) {
