@@ -311,6 +311,33 @@ export async function signInWithTelegramCode(params: {
               },
             }
           );
+        } else if (
+          errMsg.includes('SOCKET') ||
+          errMsg.includes('TIMEOUT') ||
+          errMsg.includes('closed') ||
+          errMsg.includes('Connection') ||
+          errMsg.includes('AUTH_KEY_DUPLICATED')
+        ) {
+          // Automatic reconnect & retry if connection went idle or switched lambdas
+          if (activeClient) {
+            try { await activeClient.disconnect(); } catch {}
+            activeClient = null;
+          }
+          const stringSession = new StringSession(intermediateSession || '');
+          activeClient = new TelegramClient(stringSession, apiId, apiHash, {
+            connectionRetries: 3,
+            timeout: 15,
+          });
+          await activeClient.connect();
+          lastApiIdUsed = apiId;
+
+          await activeClient.invoke(
+            new Api.auth.SignIn({
+              phoneNumber: cleanPhone,
+              phoneCodeHash,
+              phoneCode: phoneCode.trim(),
+            })
+          );
         } else {
           throw signInErr;
         }
@@ -543,6 +570,7 @@ export async function sendTelegramMessage(
   if (client && client.connected) {
     try {
       const cleanUsername = peerUsername ? peerUsername.replace(/^@/, '').trim().toLowerCase() : '';
+      const rawUsername = peerUsername ? peerUsername.replace(/^@/, '').trim() : '';
       const cleanRawId = peerUsername
         .replace(/^contact-/, '')
         .replace(/^channel-/, '')
@@ -551,48 +579,123 @@ export async function sendTelegramMessage(
         .replace(/^-100/, '')
         .replace(/^-/, '')
         .toLowerCase();
-      let entity: unknown = null;
+      const cleanPhoneDigits = cleanRawId.replace(/[^0-9]/g, '');
+      let entity: any = null;
 
-      // 1. If username is available and not a placeholder, try direct entity lookup first (fastest)
-      if (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_')) {
+      // 1. If username is available and public, resolve via MTProto ResolveUsername or getEntity
+      const isPublicUser = Boolean(rawUsername && !rawUsername.startsWith('user_') && !rawUsername.startsWith('private_'));
+      if (isPublicUser) {
         try {
-          entity = await client.getEntity(cleanUsername);
+          const resolved = await client.invoke(new Api.contacts.ResolveUsername({ username: rawUsername })) as any;
+          if (resolved.users && resolved.users.length > 0) {
+            const u = resolved.users[0];
+            entity = new Api.InputPeerUser({ userId: u.id, accessHash: u.accessHash || (BigInt(0) as any) });
+          } else if (resolved.chats && resolved.chats.length > 0) {
+            const ch = resolved.chats[0];
+            if (ch instanceof Api.Channel || ch.broadcast) {
+              entity = new Api.InputPeerChannel({ channelId: ch.id, accessHash: ch.accessHash || (BigInt(0) as any) });
+            } else {
+              entity = new Api.InputPeerChat({ chatId: ch.id });
+            }
+          }
         } catch {
-          // Fall through to dialog search
+          try {
+            entity = await client.getEntity(rawUsername);
+          } catch {
+            try {
+              entity = await client.getEntity(cleanUsername);
+            } catch {}
+          }
         }
       }
 
-      // 2. Search dialogs (contains pre-resolved inputEntity with accessHash)
+      // 2. Search dialogs (contains accessHash for private chats/groups)
       if (!entity) {
         try {
-          const dialogs = await client.getDialogs({ limit: 120 });
+          const dialogs = await client.getDialogs({ limit: 150 });
           const matched = dialogs.find((d) => {
-            const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string };
+            const dEntity = d.entity as any;
             const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
             const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
             const dUser = dEntity?.username?.toLowerCase();
+            const dName = (d.name || d.title || `${dEntity?.firstName || ''} ${dEntity?.lastName || ''}`).toLowerCase().trim();
+            const dPhone = (dEntity?.phone || '').replace(/[^0-9]/g, '');
+
             return (
               cleanDId === cleanRawId ||
-              (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
+              (isPublicUser && dUser === cleanUsername) ||
+              (cleanUsername && dUser === cleanUsername) ||
+              (cleanPhoneDigits.length >= 7 && dPhone && dPhone === cleanPhoneDigits) ||
+              (cleanRawId && dName && (dName === cleanRawId || dName.includes(cleanRawId))) ||
+              (cleanUsername && dName && (dName === cleanUsername || dName.includes(cleanUsername)))
             );
           });
           if (matched) {
-            entity = matched.inputEntity || matched.entity;
+            if (matched.inputEntity) {
+              entity = matched.inputEntity;
+            } else if (matched.entity) {
+              const e = matched.entity as any;
+              if (e.accessHash) {
+                if (matched.isUser || e instanceof Api.User) {
+                  entity = new Api.InputPeerUser({ userId: e.id, accessHash: e.accessHash });
+                } else if (matched.isChannel || e instanceof Api.Channel) {
+                  entity = new Api.InputPeerChannel({ channelId: e.id, accessHash: e.accessHash });
+                } else {
+                  entity = new Api.InputPeerChat({ chatId: e.id });
+                }
+              } else {
+                entity = matched.entity;
+              }
+            }
           }
         } catch (dErr) {
           console.warn('Dialog search notice in sendTelegramMessage:', dErr);
         }
       }
 
-      // 3. Fallback: try getEntity by numeric ID (-100 and clean)
+      // 3. Search Telegram Contacts (Api.contacts.GetContacts) for 1-on-1 contacts
+      if (!entity) {
+        try {
+          const contactsRes = await client.invoke(new Api.contacts.GetContacts({ hash: BigInt(0) as any })) as any;
+          if (contactsRes && Array.isArray(contactsRes.users)) {
+            const matchedUser = contactsRes.users.find((u: any) => {
+              const uId = u.id ? u.id.toString() : '';
+              const uUser = (u.username || '').toLowerCase();
+              const uName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().trim();
+              const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
+
+              return (
+                uId === cleanRawId ||
+                (cleanUsername && uUser === cleanUsername) ||
+                (cleanPhoneDigits.length >= 7 && uPhone && uPhone === cleanPhoneDigits) ||
+                (cleanRawId && uName && (uName === cleanRawId || uName.includes(cleanRawId)))
+              );
+            });
+
+            if (matchedUser && matchedUser.accessHash) {
+              entity = new Api.InputPeerUser({ userId: matchedUser.id, accessHash: matchedUser.accessHash });
+            }
+          }
+        } catch (cErr) {
+          console.warn('GetContacts notice in sendTelegramMessage:', cErr);
+        }
+      }
+
+      // 4. Fallback: try getInputEntity or getEntity by cleanRawId / -100
       if (!entity && cleanRawId) {
         try {
-          entity = await client.getEntity(`-100${cleanRawId}`);
+          entity = await client.getInputEntity(`-100${cleanRawId}`);
         } catch {
           try {
-            entity = await client.getEntity(cleanRawId);
+            entity = await client.getInputEntity(cleanRawId);
           } catch {
-            // ignore
+            try {
+              entity = await client.getEntity(`-100${cleanRawId}`);
+            } catch {
+              try {
+                entity = await client.getEntity(cleanRawId);
+              } catch {}
+            }
           }
         }
       }
@@ -783,58 +886,129 @@ export async function syncMessagesFromTelegram(
       .replace(/^-100/, '')
       .replace(/^-/, '')
       .toLowerCase();
-    let entity: unknown = null;
+    const cleanPhoneDigits = cleanRawId.replace(/[^0-9]/g, '');
+    let entity: any = null;
 
-    // 1. Try resolving by public username first (instant MTProto resolution)
-    if (rawUsername && !rawUsername.startsWith('user_') && !rawUsername.startsWith('private_')) {
+    // 1. Try public username if available (not placeholder)
+    const isPublicUser = Boolean(rawUsername && !rawUsername.startsWith('user_') && !rawUsername.startsWith('private_'));
+    if (isPublicUser) {
       try {
-        entity = await client.getEntity(rawUsername);
+        const resolved = await client.invoke(new Api.contacts.ResolveUsername({ username: rawUsername })) as any;
+        if (resolved.users && resolved.users.length > 0) {
+          const u = resolved.users[0];
+          entity = new Api.InputPeerUser({ userId: u.id, accessHash: u.accessHash || (BigInt(0) as any) });
+        } else if (resolved.chats && resolved.chats.length > 0) {
+          const ch = resolved.chats[0];
+          if (ch instanceof Api.Channel || ch.broadcast) {
+            entity = new Api.InputPeerChannel({ channelId: ch.id, accessHash: ch.accessHash || (BigInt(0) as any) });
+          } else {
+            entity = new Api.InputPeerChat({ chatId: ch.id });
+          }
+        }
       } catch {
         try {
-          entity = await client.getEntity(cleanUsername);
+          entity = await client.getEntity(rawUsername);
         } catch {
-          // Fall back to dialog enumeration
+          try {
+            entity = await client.getEntity(cleanUsername);
+          } catch {}
         }
       }
     }
 
-    // 2. Search dialogs if not resolved by username (dialogs contain accessHash for private channels/groups)
+    // 2. Search dialogs (contains pre-resolved accessHash for private contacts and supergroups)
     if (!entity) {
       try {
-        const dialogs = await client.getDialogs({ limit: 120 });
+        const dialogs = await client.getDialogs({ limit: 150 });
         const matched = dialogs.find((d) => {
-          const dEntity = d.entity as unknown as { id?: { toString: () => string }; username?: string; title?: string };
+          const dEntity = d.entity as any;
           const dIdStr = d.id ? d.id.toString() : (dEntity?.id ? dEntity.id.toString() : '');
           const cleanDId = dIdStr.replace(/^-100/, '').replace(/^-/, '').toLowerCase();
           const dUser = dEntity?.username?.toLowerCase();
+          const dName = (d.name || d.title || `${dEntity?.firstName || ''} ${dEntity?.lastName || ''}`).toLowerCase().trim();
+          const dPhone = (dEntity?.phone || '').replace(/[^0-9]/g, '');
+
           return (
             cleanDId === cleanRawId ||
-            (cleanUsername && !cleanUsername.startsWith('user_') && !cleanUsername.startsWith('private_') && dUser === cleanUsername)
+            (isPublicUser && dUser === cleanUsername) ||
+            (cleanUsername && dUser === cleanUsername) ||
+            (cleanPhoneDigits.length >= 7 && dPhone && dPhone === cleanPhoneDigits) ||
+            (cleanRawId && dName && (dName === cleanRawId || dName.includes(cleanRawId))) ||
+            (cleanUsername && dName && (dName === cleanUsername || dName.includes(cleanUsername)))
           );
         });
 
         if (matched) {
-          entity = matched.inputEntity || matched.entity;
+          if (matched.inputEntity) {
+            entity = matched.inputEntity;
+          } else if (matched.entity) {
+            const e = matched.entity as any;
+            if (e.accessHash) {
+              if (matched.isUser || e instanceof Api.User) {
+                entity = new Api.InputPeerUser({ userId: e.id, accessHash: e.accessHash });
+              } else if (matched.isChannel || e instanceof Api.Channel) {
+                entity = new Api.InputPeerChannel({ channelId: e.id, accessHash: e.accessHash });
+              } else {
+                entity = new Api.InputPeerChat({ chatId: e.id });
+              }
+            } else {
+              entity = matched.entity;
+            }
+          }
         }
       } catch (dErr) {
         console.warn('Dialog search notice in syncMessagesFromTelegram:', dErr);
       }
     }
 
-    // 3. Fallback: try resolving by numerical ID (-100 and clean)
+    // 3. Search Telegram Contacts (Api.contacts.GetContacts) for individual contacts
+    if (!entity) {
+      try {
+        const contactsRes = await client.invoke(new Api.contacts.GetContacts({ hash: BigInt(0) as any })) as any;
+        if (contactsRes && Array.isArray(contactsRes.users)) {
+          const matchedUser = contactsRes.users.find((u: any) => {
+            const uId = u.id ? u.id.toString() : '';
+            const uUser = (u.username || '').toLowerCase();
+            const uName = `${u.firstName || ''} ${u.lastName || ''}`.toLowerCase().trim();
+            const uPhone = (u.phone || '').replace(/[^0-9]/g, '');
+
+            return (
+              uId === cleanRawId ||
+              (cleanUsername && uUser === cleanUsername) ||
+              (cleanPhoneDigits.length >= 7 && uPhone && uPhone === cleanPhoneDigits) ||
+              (cleanRawId && uName && (uName === cleanRawId || uName.includes(cleanRawId)))
+            );
+          });
+
+          if (matchedUser && matchedUser.accessHash) {
+            entity = new Api.InputPeerUser({ userId: matchedUser.id, accessHash: matchedUser.accessHash });
+          }
+        }
+      } catch (cErr) {
+        console.warn('GetContacts notice in syncMessagesFromTelegram:', cErr);
+      }
+    }
+
+    // 4. Fallback: try getInputEntity or getEntity by cleanRawId / -100
     if (!entity && cleanRawId) {
       try {
-        entity = await client.getEntity(`-100${cleanRawId}`);
+        entity = await client.getInputEntity(`-100${cleanRawId}`);
       } catch {
         try {
-          entity = await client.getEntity(cleanRawId);
+          entity = await client.getInputEntity(cleanRawId);
         } catch {
-          // ignore
+          try {
+            entity = await client.getEntity(`-100${cleanRawId}`);
+          } catch {
+            try {
+              entity = await client.getEntity(cleanRawId);
+            } catch {}
+          }
         }
       }
     }
 
-    // 4. Fetch messages (supports topic/forum filter via replyTo)
+    // 5. Fetch messages (supports topic/forum filter via replyTo)
     const getOptions: Record<string, any> = { limit: 50 };
     if (topicId && Number(topicId) > 0) {
       getOptions.replyTo = Number(topicId);
@@ -843,7 +1017,7 @@ export async function syncMessagesFromTelegram(
     let tgMessages: unknown[] = [];
     if (entity) {
       tgMessages = await client.getMessages(entity as Parameters<typeof client.getMessages>[0], getOptions);
-    } else if (rawUsername && !rawUsername.startsWith('user_') && !rawUsername.startsWith('private_')) {
+    } else if (isPublicUser) {
       try {
         tgMessages = await client.getMessages(rawUsername, getOptions);
       } catch {
@@ -970,7 +1144,7 @@ export async function syncMessagesFromTelegram(
       }
 
       const newMsg: Message = {
-        id: `tg-${peerId}-${msgId}`,
+        id: `tg-${cleanRawId || peerId}-${msgId}`,
         peerId,
         senderId: isOut ? myId : peerId,
         senderName: senderDisplayName,
@@ -987,14 +1161,15 @@ export async function syncMessagesFromTelegram(
 
     if (synced.length > 0) {
       saveRealTelegramMessages(peerId, synced);
-      if (cleanUsername) {
-        saveRealTelegramMessages(`channel-${cleanUsername}`, synced);
-        saveRealTelegramMessages(cleanUsername, synced);
+      if (cleanRawId) {
+        saveRealTelegramMessages(cleanRawId, synced);
+        saveRealTelegramMessages(`contact-${cleanRawId}`, synced);
+        saveRealTelegramMessages(`channel-${cleanRawId}`, synced);
       }
-    }
-
-    if (synced.length > 0) {
-      saveRealTelegramMessages(peerId, synced);
+      if (cleanUsername) {
+        saveRealTelegramMessages(cleanUsername, synced);
+        saveRealTelegramMessages(`@${cleanUsername}`, synced);
+      }
     }
     return synced;
   } catch (err) {
@@ -1136,6 +1311,33 @@ export async function getMyTelegramDialogs(customSessionString?: string): Promis
         isUser,
         unreadCount: d.unreadCount || 0,
       });
+    }
+
+    try {
+      const contactsRes = await client.invoke(new Api.contacts.GetContacts({ hash: BigInt(0) as any })) as any;
+      if (contactsRes && Array.isArray(contactsRes.users)) {
+        const seenIds = new Set(results.map(r => r.id.replace(/^-100/, '').replace(/^-/, '')));
+        for (const u of contactsRes.users) {
+          if (!u || !u.id) continue;
+          const uIdStr = u.id.toString();
+          if (seenIds.has(uIdStr) || uIdStr === '777000') continue;
+          const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+          const title = fullName || (u.username ? `@${u.username}` : (u.phone ? u.phone : 'Telegram Contact'));
+          results.push({
+            id: uIdStr,
+            title,
+            username: u.username || undefined,
+            isGroup: false,
+            isChannel: false,
+            isPrivate: !u.username,
+            isUser: true,
+            unreadCount: 0,
+          });
+          seenIds.add(uIdStr);
+        }
+      }
+    } catch (cErr) {
+      console.warn('Contacts enrichment notice in getMyTelegramDialogs:', cErr);
     }
 
     return { dialogs: results, notConnected: false };

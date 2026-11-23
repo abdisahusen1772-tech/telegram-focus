@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Telegram Focus — Plan • Focus • Achieve",
+  title: "Abdigram — Plan • Focus • Achieve",
   description:
     "A minimalist communication layer over Telegram eliminating feeds, search engines, recommendations, and unnecessary social distraction.",
   manifest: "/manifest.json",
@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Focus",
+    title: "Abdigram",
   },
 };
 

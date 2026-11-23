@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const peerId = searchParams.get('peerId');
     const queryUsername = (searchParams.get('username') || '').replace(/^@/, '').trim();
-    const queryTitle = (searchParams.get('title') || '').trim();
+    const queryTitle = (searchParams.get('title') || searchParams.get('name') || '').trim();
     const topicIdParam = searchParams.get('topicId');
     const topicId = topicIdParam ? parseInt(topicIdParam, 10) : undefined;
 
@@ -76,7 +76,10 @@ export async function GET(req: NextRequest) {
     let messages = getPeerMessages(peerId);
 
     // 2. If connected to real Telegram, live sync with 20s timeout
-    const syncUser = queryUsername || targetContact?.username || targetChannel?.username || '';
+    const candidateUser = queryUsername || targetContact?.username || targetChannel?.username || '';
+    const syncUser = candidateUser && !candidateUser.startsWith('user_') && !candidateUser.startsWith('private_')
+      ? candidateUser
+      : (queryTitle || targetContact?.firstName || candidateUser || '');
     const syncId = targetContact?.id || targetChannel?.id || peerId;
 
     if (session && !session.isDemoMode && session.isConnected && session.sessionString) {

@@ -1,6 +1,6 @@
 {
-  "name": "Telegram Focus - Plan • Focus • Achieve",
-  "short_name": "TG Focus",
+  "name": "Abdigram - Plan • Focus • Achieve",
+  "short_name": "Abdigram",
   "description": "Minimalist distraction-free communication layer over Telegram without feeds or algorithms",
   "start_url": "/",
   "display": "standalone",

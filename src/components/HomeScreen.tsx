@@ -110,15 +110,15 @@ export function HomeScreen({
         <header className="text-center pt-1 pb-5">
           <div className="flex flex-col items-center">
             <div className="relative group cursor-pointer">
-              <div className="absolute -inset-1.5 bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 rounded-full blur-xs opacity-60 group-hover:opacity-90 transition duration-300 animate-pulse"></div>
+              <div className="absolute -inset-1.5 bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 rounded-3xl blur-xs opacity-60 group-hover:opacity-90 transition duration-300 animate-pulse"></div>
               <img
                 src="/app-icon.png"
-                alt="Telegram Focus"
-                className="relative w-16 h-16 rounded-full object-cover border-2 border-white/80 dark:border-white/20 shadow-xl group-hover:scale-105 transition-transform duration-200"
+                alt="Abdigram"
+                className="relative w-16 h-16 rounded-2xl object-contain border-2 border-white/80 dark:border-white/20 shadow-xl group-hover:scale-105 transition-transform duration-200"
               />
             </div>
             <h1 className="text-xl font-bold tracking-tight text-stone-900 dark:text-stone-100 mt-2.5">
-              Telegram Focus
+              Abdigram
             </h1>
             <p className="text-[10px] font-mono tracking-[0.22em] uppercase text-sky-600 dark:text-sky-400 font-semibold mt-0.5">
               PLAN • FOCUS • ACHIEVE

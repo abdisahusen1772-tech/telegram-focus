@@ -119,43 +119,41 @@ export function resolveSession(req?: NextRequest): UserSession | null {
   if (req) {
     syncApiCredentialsFromHeaders(req);
     syncPeersFromHeaders(req);
-  }
 
-  // 1. Check existing in-memory/disk session
-  let session = getUserSession();
-  if (session && session.isConnected && session.sessionString && session.sessionString.length > 10) {
-    return session;
-  }
-
-  if (req) {
-    // 2. Check header from client (localStorage persistence)
+    // 1. Prioritize direct header from client (localStorage session is the client's source of truth)
     const headerSessionStr = req.headers.get('x-telegram-session');
     if (headerSessionStr && headerSessionStr.trim().length > 10) {
       const cleanSessionStr = headerSessionStr.trim();
-      const userId = req.headers.get('x-telegram-user-id') || session?.userId || 'tg-user';
-      const firstName = req.headers.get('x-telegram-first-name') || session?.firstName || 'Telegram User';
-      const phone = req.headers.get('x-telegram-phone') || session?.phone || '';
-      const username = req.headers.get('x-telegram-username') || session?.username || '';
-      const isDemo = cleanSessionStr.startsWith('mock_') || cleanSessionStr.startsWith('demo_');
+      const current = getUserSession();
 
-      const restored: UserSession = {
-        userId,
-        firstName: decodeURIComponent(firstName),
-        lastName: session?.lastName || '',
-        username,
-        phone,
-        sessionString: cleanSessionStr,
-        isConnected: true,
-        isDemoMode: isDemo,
-        connectedAt: session?.connectedAt || new Date().toISOString(),
-        lastSyncedAt: new Date().toISOString(),
-      };
+      // If current in-memory session is missing or different, sync and restore client's session
+      if (!current || !current.isConnected || current.sessionString !== cleanSessionStr) {
+        const userId = req.headers.get('x-telegram-user-id') || current?.userId || 'tg-user';
+        const firstName = req.headers.get('x-telegram-first-name') || current?.firstName || 'Telegram User';
+        const phone = req.headers.get('x-telegram-phone') || current?.phone || '';
+        const username = req.headers.get('x-telegram-username') || current?.username || '';
+        const isDemo = cleanSessionStr.startsWith('mock_') || cleanSessionStr.startsWith('demo_');
 
-      setUserSession(restored);
-      return restored;
+        const restored: UserSession = {
+          userId,
+          firstName: decodeURIComponent(firstName),
+          lastName: current?.lastName || '',
+          username,
+          phone,
+          sessionString: cleanSessionStr,
+          isConnected: true,
+          isDemoMode: isDemo,
+          connectedAt: current?.connectedAt || new Date().toISOString(),
+          lastSyncedAt: new Date().toISOString(),
+        };
+
+        setUserSession(restored);
+        return restored;
+      }
+      return current;
     }
 
-    // 3. Check cookie
+    // 2. Check HTTP-only cookie
     const cookieVal = req.cookies.get('tg_focus_session')?.value;
     if (cookieVal) {
       try {
@@ -170,6 +168,8 @@ export function resolveSession(req?: NextRequest): UserSession | null {
     }
   }
 
+  // 3. Check existing in-memory/disk session
+  const session = getUserSession();
   if (session && session.isConnected && session.sessionString && session.sessionString.length > 10) {
     return session;
   }

@@ -586,7 +586,7 @@ export function SettingsView({
       {/* 8. Manifesto & About */}
       <section className="bg-stone-100 border border-stone-200/80 rounded-xl p-4 space-y-2 text-xs text-stone-600">
         <div className="flex justify-between items-center font-mono">
-          <span className="font-semibold text-stone-800">Telegram Focus Client</span>
+          <span className="font-semibold text-stone-800">Abdigram Client</span>
           <span className="text-[11px] text-stone-500">v1.0.0</span>
         </div>
         <p className="text-[11px] leading-relaxed text-stone-500 font-sans">
